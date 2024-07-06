@@ -1,4 +1,4 @@
-# Mino: A Small Vim-like Text Editor
+# `Mino`: A Really Small & Basic Vim-ish-like Text Editor
 
 ## Some useful links (delete later)
 * [https://viewsourcecode.org/snaptoken/kilo/](https://viewsourcecode.org/snaptoken/kilo/)
