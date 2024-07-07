@@ -1,25 +1,33 @@
-use std::thread;
-use std::time;
 use std::io::{self, Write, Read};
-use crossterm::{QueueableCommand, cursor, terminal, ExecutableCommand};
+use crossterm::terminal;
 
-/** Reads in a character from `stdin` and inserts it in `cbuf`.
+/// Reads in up to 4 bytes from `stdin` and outputs the valid codepoints in UTF-8. 
+///
+/// Returns `Ok` containing a string of the valid UTF8 codepoints on success 
+/// and `Err(io::Error)` when `io::stdin().read` would fail. 
+///
+/// Ignores invalid UTF-8 codepoints.
+fn read(stdin: &mut io::Stdin) -> io::Result<String> {
+    let mut buf = [0x00u8; 4];
 
-Returns `Ok(())` on success and `Err(io::Error)` when `io::stdin().read()` would fail. */
-fn read(stdin: &mut io::Stdin, cbuf: &mut char) -> io::Result<()> {
-    let mut bytes = [0x00u8; 4];
-    stdin.read(&mut bytes)?;
+    stdin.read(&mut buf)?;
 
-    let c = match char::from_u32(u32::from_le_bytes(bytes)) {
-        Some(c) => c,
-        None => unreachable!() // Will be reached if char read is an invalid char, but it was a char, so it can't be invalid.
-    };
+    let mut string = String::new();
+    for chunk in buf.utf8_chunks() {
+        let valid = chunk.valid();
 
-    *cbuf = c;
+        for ch in valid.chars() {
+            dbg!(ch);
+            string.push(ch);
+        }
+    }
 
-    Ok(())
+    Ok(string)
 }
 
+/// Used to clean up when project exits. 
+/// 
+/// Eg. disables raw mode.
 struct CleanUp;
 
 impl Drop for CleanUp {
@@ -29,33 +37,16 @@ impl Drop for CleanUp {
 }
 
 fn main() -> io::Result<()> {
+    terminal::enable_raw_mode().expect("Couldn't enable raw mode.");
+
     let _clean_up = CleanUp;
     let mut stdin = io::stdin();
     let mut stdout = io::stdout();
 
-    stdout.execute(cursor::Hide)?;
-    for i in (1..30).rev() {
-        stdout.queue(cursor::SavePosition)?;
-        stdout.write_all(format!("{:02}: FOOBAR ", i).as_bytes())?;
-        stdout.queue(cursor::RestorePosition)?;
-        stdout.flush()?;
-        thread::sleep(time::Duration::from_millis(100));
-
-        stdout.queue(cursor::RestorePosition)?;
-        stdout.queue(terminal::Clear(terminal::ClearType::FromCursorDown))?;
-    }
-    stdout.execute(cursor::Show)?;
-
-    println!("Done!");
-
-    terminal::enable_raw_mode().expect("Couldn't enable raw mode.");
-
-    let mut c = char::default();
-    while c != 'q' {
-        read(&mut stdin, &mut c)?;
-
-        stdout.write_all(&(c as u32).to_le_bytes())?;
-        stdout.flush()?;
+    let mut chars = String::new();
+    while chars != "q\0\0\0" {
+        chars = read(&mut stdin)?;
+        println!("{}", chars);
     }
 
     Ok(())
