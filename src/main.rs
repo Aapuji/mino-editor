@@ -1,41 +1,31 @@
 mod cleanup;
 mod editor;
 
-use std::io::{self, Write, Read};
-use crossterm::{
-    terminal::{self, Clear, ClearType},
-    QueueableCommand
-};
-
-// fn _prev_stuff(config: editor::Config) -> io::Result<()> {
-//     let mut chars = String::new();
-//     while chars != "q\0\0\0" {
-//         chars = editor::read_key(stdin)?;
-//         println!("{}", chars);
-//     }
-
-//     Ok(())
-// }
+use std::io::{self, Write};
+use crossterm::{event::{self, KeyEvent}, style::Print, terminal, QueueableCommand};
 
 fn main() -> io::Result<()> {
     terminal::enable_raw_mode().expect("Couldn't enable raw mode.");
 
-    let mut config = editor::Config {
-        stdin: io::stdin(),
-        stdout: io::stdout(),
-        _clean_up: cleanup::CleanUp
-    };
+    let mut config = editor::Config::init();
+
+    editor::reset_screen(&mut config)?;
+    config.stdout.flush()?;
 
     loop {
-        let signals = editor::process_keys(&mut config)?;
+        editor::refresh_screen(&mut config)?;
+        config.stdout.flush()?;
 
-        for signal in signals {
 
-        }
+        // let char = editor::read(&mut config)?;
+
+        println!("{:?}", event::read()?);
+        
+        // config = editor::process_key(config, &char)?;
+
+        // config.stdout.queue(Print(char))?;
+        // config.stdout.flush()?;
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
-
-    // stdout.queue(Clear(ClearType::All))?;
-    // stdout.flush()?;
-
-    Ok(())
 }
