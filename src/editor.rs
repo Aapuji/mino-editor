@@ -1,10 +1,16 @@
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 
-use crossterm::{cursor::{Hide, MoveTo, Show}, event::{self, read as read_event, Event, KeyCode, KeyEvent, KeyEventKind}, style::Print, terminal::{self, Clear, ClearType}, QueueableCommand};
+use crossterm::{cursor::{Hide, MoveTo, Show}, event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, QueueableCommand};
 
 use crate::cleanup::CleanUp;
+use crate::file::Row;
 
 const MINO_VER: &'static str = "0.1.0";
+
+const NONE:     u8 = 0b0000_0000;     
+const SHIFT:    u8 = 0b0000_0001;
+const CONTROL:  u8 = 0b0000_0010;
+const ALT:      u8 = 0b0000_0100;
 
 // Perhaps in future, rename to EState (editor state), because user may have configuration options?
 /// Holds global state information about the program
@@ -12,24 +18,32 @@ const MINO_VER: &'static str = "0.1.0";
 pub struct Config {
     pub stdin: io::Stdin,
     pub stdout: io::Stdout,
-    pub screenrows: u16,
-    pub screencols: u16,
+    pub screen_rows: u16,
+    pub screen_cols: u16,
+    pub row_offset: u16,
+    pub col_offset: u16,
     pub cx: u16,
     pub cy: u16,
+    pub num_rows: u16,
+    pub rows: Vec<Row>,
     pub _clean_up: CleanUp
 }
 
 impl Config {
     pub fn init() -> Self {
-        let (screencols, screenrows) = terminal::size().expect("Couldn't get the size of the terminal.");
+        let (screen_cols, screen_rows) = terminal::size().expect("Couldn't get the size of the terminal.");
 
         Self {
             stdin: io::stdin(),
             stdout: io::stdout(),
-            screenrows,
-            screencols,
+            screen_rows,
+            screen_cols,
+            row_offset: 0,
+            col_offset: 0,
             cx: 0,
             cy: 0,
+            num_rows: 0,
+            rows: vec![],
             _clean_up: CleanUp
         }
     }
@@ -40,72 +54,35 @@ impl Config {
     }
 }
 
-/// Reads in a byte and checks if the UTF-8 encoded codepoint is actually longer. Then reads up to 3 more bytes if required. 
-///
-/// Returns `Ok(String)` containing the codepoint if the byte was valid UTF-8,
-/// and `Err(io::Error)` when `io::stdin().read` would fail.
-///
-/// Ignores invalid UTF-8 codepoints.
-pub fn read(config: &mut Config) -> io::Result<String> {
-    let mut bytes = [0x00u8; 4];
-
-    config.stdin.read(&mut bytes[0..1])?;
-
-    // Check if leading bit of bytes[0] is 0 => ASCII
-    if bytes[0] & 0b10000000 == 0 {
-        ()
-    // Check if leading bits are 110 => read next and parse both as codepoint
-    } else if 
-        bytes[0] & 0b11000000 == 0b11000000 &&    // Check 11******
-        bytes[0] | 0b11011111 == 0b11011111       // Check **0*****
-    {
-        config.stdin.read(&mut bytes[1..2])?;
-    // Check if leading bits are 1110 => read next and parse all as codepoint
-    } else if 
-        bytes[0] & 0b11100000 == 0b11100000 &&    // Check 111*****  
-        bytes[0] | 0b11101111 == 0b11101111       // Check ***0****
-    {
-        config.stdin.read(&mut bytes[1..3])?;
-    // Check if leading bits are 1111_0 => read next and parse all as codepoint
-    } else if
-        bytes[0] & 0b11110000 == 0b11110000 &&    // Check 1111****
-        bytes[0] | 0b11110111 == 0b11110111       // Check ****0***
-    {
-        config.stdin.read(&mut bytes[1..])?;
-    // Malformed utf8 => ignore
-    } else {
-        ()
-    }
-
-    let mut string = String::new();
-    for chunk in bytes.utf8_chunks() {
-        let valid = chunk.valid();
-
-        for ch in valid.chars() {                        
-            if ch != '\0' {
-                dbg![ch];
-                string.push(ch);
-            }
-        }
-    }
-
-    Ok(string)
-}
-
-pub fn read_usingevent(config: &mut Config) -> io::Result<()> {
+/// Reads in an event and then returns it if it was a `KeyEvent`, otherwise it just throws it away.
+pub fn read(config: &mut Config) -> io::Result<Option<event::KeyEvent>> {
     let e = event::read()?;
 
-    if let Event::Key(KeyEvent { 
-        code: kc, 
-        modifiers: modif, 
-        kind: KeyEventKind::Press, 
-        state: _ }
-    ) = e {
-
+    if let Event::Key(KeyEvent {
+        kind: KeyEventKind::Press,
+        code,
+        modifiers,
+        state,
     }
+    ) = e {
+        Ok(Some(KeyEvent {
+            kind: KeyEventKind::Press,
+            code,
+            modifiers,
+            state
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn init_screen(config: &mut Config) -> io::Result<()> {
+    reset_screen(config)?;
+    config.stdout.flush()?;
 
     Ok(())
 }
+
 
 /// Bitwise-ANDs `ch` with `0x1f`. Equivalent to keycode of CTRL+`ch`.
 pub fn ctrl_key(ch: char) -> char {
@@ -119,7 +96,6 @@ pub fn ctrl_key_str(ch: char) -> String {
 pub fn reset_screen(config: &mut Config) -> io::Result<()> {
     config.stdout.queue(Hide)?;
     clear_screen(config)?;
-    draw_rows(config)?;
     config.stdout.queue(Show)?;
 
     Ok(())
@@ -145,68 +121,159 @@ pub fn clear_screen(config: &mut Config) -> io::Result<()> {
 }
 
 fn draw_rows(config: &mut Config) -> io::Result<()> {
-    let y_max = terminal::size()?.1;
+    let y_max = config.screen_rows;
     for y in 0..y_max {
-        let str = if y == config.screenrows / 3 {
-            // Display welcome screen
-            let mut welcome = format!("Mino editor -- version {MINO_VER}");
-            let mut welcome_len = welcome.len();
+        let file_row = y + config.row_offset;
+        if file_row >= config.num_rows {
+            let str = if config.num_rows == 0 && y == config.screen_rows / 3 {
+                // Display welcome screen
+                let mut welcome = format!("Mino editor -- version {MINO_VER}");
+                let mut welcome_len = welcome.len();
 
-            if welcome_len > config.screencols as usize {
-                welcome_len = config.screencols as usize;
-            }
+                if welcome_len > config.screen_cols as usize {
+                    welcome_len = config.screen_cols as usize;
+                }
 
-            let mut px = (config.screencols as usize - welcome_len) / 2;
-            if px != 0 {
-                config.stdout.queue(Print("~"))?;
-                px -= 1;
-            }
-            while px != 0 {
-                config.stdout.queue(Print(" "))?;
-                px -= 1;
-            }
+                let mut px = (config.screen_cols as usize - welcome_len) / 2;
+                if px != 0 {
+                    config.stdout.queue(Print("~"))?;
+                    px -= 1;
+                }
+                while px != 0 {
+                    config.stdout.queue(Print(" "))?;
+                    px -= 1;
+                }
 
-            welcome.truncate(welcome_len);
-            format!("{welcome}\r\n")
-        } else if y < y_max - 1 {
-            format!("~\r\n")
+                welcome.truncate(welcome_len);
+                format!("{welcome}\r\n")
+            } else if y < y_max - 1 {
+                format!("~\r\n")
+            } else {
+                format!("~")
+            };
+
+            config.stdout.queue(Print(str))?;
+            config.stdout.queue(Clear(ClearType::UntilNewLine))?;
         } else {
-            format!("~")
-        };
+            let len = if config.rows[file_row as usize].size > config.screen_cols as usize {
+                config.screen_cols as usize
+            } else {
+                config.rows[file_row as usize].size
+            };
 
-        config.stdout.queue(Print(str))?;
-        config.stdout.queue(Clear(ClearType::UntilNewLine))?;
+            let msg = &config.rows[file_row as usize].chars[..len];
+            config.stdout.queue(Print(format!("{}\n", msg)))?;
+        }
     }
 
     Ok(())
 }
 
-pub fn move_cursor(config: &mut Config, key: &str) -> io::Result<()> {
+pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
     match key {
-        "w" => config.cy -= 1,
-        "a" => config.cx -= 1,
-        "s" => config.cy += 1,
-        "d" => config.cx += 1,
-        _   => ()
+        KeyCode::Char('w') | KeyCode::Up    => if config.cy != 0 { 
+            config.cy -= 1
+        }
+        KeyCode::Char('a') | KeyCode::Left  => if config.cx != 0 {
+            config.cx -= 1
+        }
+        KeyCode::Char('s') | KeyCode::Down  => if config.cy != config.screen_rows - 1 {
+            config.cy += 1
+        }
+        KeyCode::Char('d') | KeyCode::Right => if config.cx != config.screen_cols - 1 {
+            config.cx += 1
+        }
+        _                                   => ()
     }
 
     Ok(())
 }
 
-pub fn process_key(mut config: Config, key: &str) -> io::Result<Config> {
-    match key {
-        _ if key == ctrl_key_str('q') => {
+fn key_mod(bits: u8) -> KeyModifiers {
+    KeyModifiers::from_bits_truncate(bits)
+}
+
+/// Gets the `char` from the `KeyCode`
+pub fn ch_of(keycode: &KeyCode) -> Option<char> {
+    if let KeyCode::Char(ch) = *keycode {
+        Some(ch)
+    } else {
+        None
+    }
+}
+
+/// Processes the given `&KeyEvent`.
+/// 
+/// This takes ownership of `config`, but returns ownership back out (unless it exited the program).
+pub fn process_key_event(mut config: Config, key: &KeyEvent) -> io::Result<Config> {
+    match *key {
+        // Quit (CTRL+Q)
+        KeyEvent { 
+            code: KeyCode::Char('q'), 
+            modifiers: m,
+            ..
+        } if m == key_mod(CONTROL) => {
             config.clean_up();
             std::process::exit(0);
         }
-        "w" | 
-        "a" | 
-        "s" | 
-        "d" => {
-            move_cursor(&mut config, key)?;
+
+        // Move (wasd/arrows)
+        KeyEvent {
+            code: KeyCode::Char('w') |
+                  KeyCode::Char('a') |
+                  KeyCode::Char('s') |
+                  KeyCode::Char('d') |
+                  KeyCode::Up        |
+                  KeyCode::Down      |
+                  KeyCode::Left      |
+                  KeyCode::Right,
+            modifiers: m,
+            ..
+        } if m == key_mod(NONE) => {
+            move_cursor(&mut config, key.code)?;
             
             Ok(config)
         }
+
+        // Page Up/Page Down
+        KeyEvent { 
+            code: code @ (KeyCode::PageUp | KeyCode::PageDown), 
+            modifiers: m, 
+            ..
+        } if m == key_mod(NONE) => {
+            if code == KeyCode::PageUp {
+                config.cy = 0;
+            } else {
+                config.cy = config.screen_rows;
+            }
+
+            Ok(config)
+        }
+
+        // Home/End
+        KeyEvent { 
+            code: code @ (KeyCode::Home | KeyCode::End), 
+            modifiers: m, 
+            ..
+        } if m == key_mod(NONE) => {
+            if code == KeyCode::Home {
+                config.cx = 0;
+            } else {
+                config.cx = config.screen_cols;
+            }
+
+            Ok(config)
+        }
+
+        // Delete
+        KeyEvent { 
+            code: KeyCode::Delete, 
+            modifiers: m, 
+            ..
+        } if m == key_mod(NONE) => {
+            Ok(config)
+        }
+
         _ => Ok(config)
     }
 }
