@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crossterm::{cursor::{Hide, MoveTo, Show}, event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, QueueableCommand};
+use crossterm::{cursor::{Hide, MoveTo, Show}, event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, ExecutableCommand, QueueableCommand};
 
 use crate::cleanup::CleanUp;
 use crate::file::Row;
@@ -12,6 +12,8 @@ const SHIFT:    u8 = 0b0000_0001;
 const CONTROL:  u8 = 0b0000_0010;
 const ALT:      u8 = 0b0000_0100;
 
+const ERASE_TERM: &'static str = "\x1bc";
+
 // Perhaps in future, rename to EState (editor state), because user may have configuration options?
 /// Holds global state information about the program
 #[derive(Debug)]
@@ -21,7 +23,6 @@ pub struct Config {
     pub screen_rows: u16,
     pub screen_cols: u16,
     pub row_offset: u16,
-    pub col_offset: u16,
     pub cx: u16,
     pub cy: u16,
     pub num_rows: u16,
@@ -39,7 +40,6 @@ impl Config {
             screen_rows,
             screen_cols,
             row_offset: 0,
-            col_offset: 0,
             cx: 0,
             cy: 0,
             num_rows: 0,
@@ -55,7 +55,7 @@ impl Config {
 }
 
 /// Reads in an event and then returns it if it was a `KeyEvent`, otherwise it just throws it away.
-pub fn read(config: &mut Config) -> io::Result<Option<event::KeyEvent>> {
+pub fn read() -> io::Result<Option<event::KeyEvent>> {
     let e = event::read()?;
 
     if let Event::Key(KeyEvent {
@@ -114,7 +114,7 @@ pub fn refresh_screen(config: &mut Config) -> io::Result<()> {
 }
 
 pub fn clear_screen(config: &mut Config) -> io::Result<()> {
-    config.stdout.queue(Clear(ClearType::All))?;
+    config.stdout.queue(Print(ERASE_TERM))?;
     config.stdout.queue(MoveTo(0, 0))?;
 
     Ok(())
@@ -161,9 +161,16 @@ fn draw_rows(config: &mut Config) -> io::Result<()> {
                 config.rows[file_row as usize].size
             };
 
-            let msg = &config.rows[file_row as usize].chars[..len];
-            config.stdout.queue(Print(format!("{}\n", msg)))?;
+            let msg = &config.rows[y as usize].chars[..len];
+
+            if file_row < y_max - 1 {
+                config.stdout.queue(Print(format!("{}\n", msg)))?;
+            } else {
+                config.stdout.queue(Print(format!("{}", msg)))?;
+            }
         }
+
+        // std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
     Ok(())
@@ -177,7 +184,7 @@ pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
         KeyCode::Char('a') | KeyCode::Left  => if config.cx != 0 {
             config.cx -= 1
         }
-        KeyCode::Char('s') | KeyCode::Down  => if config.cy != config.screen_rows - 1 {
+        KeyCode::Char('s') | KeyCode::Down  => if config.cy + 1 < config.num_rows {
             config.cy += 1
         }
         KeyCode::Char('d') | KeyCode::Right => if config.cx != config.screen_cols - 1 {

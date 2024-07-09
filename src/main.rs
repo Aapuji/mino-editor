@@ -4,7 +4,7 @@ mod file;
 
 use std::io::{self, Write};
 use std::env;
-use crossterm::terminal;
+use crossterm::{event, terminal};
 
 fn main() -> io::Result<()> {
     terminal::enable_raw_mode().expect("Couldn't enable raw mode.");
@@ -22,11 +22,10 @@ fn main() -> io::Result<()> {
         editor::refresh_screen(&mut config)?;
         config.stdout.flush()?;
 
-
-        let ke = if let Some(e) = editor::read(&mut config)? {
-            e
-        } else {
-            continue;
+        let ke = loop {
+            if let Some(e) = editor::read()? {
+                break e;
+            };
         };
 
         config = editor::process_key_event(config, &ke)?;
