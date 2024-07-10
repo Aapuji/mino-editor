@@ -2,9 +2,15 @@ mod cleanup;
 mod editor;
 mod file;
 
+use core::time;
 use std::io::{self, Write};
 use std::env;
-use crossterm::{event, terminal};
+use std::thread;
+use crossterm::cursor::Hide;
+use crossterm::{event, terminal, QueueableCommand};
+
+const TERM_RESIZE_SLEEP_TIME: time::Duration = time::Duration::from_millis(10);
+const MAXIMUM_EVENT_BLOCK_TIME: time::Duration = time::Duration::from_millis(10);
 
 fn main() -> io::Result<()> {
     terminal::enable_raw_mode().expect("Couldn't enable raw mode.");
@@ -23,9 +29,16 @@ fn main() -> io::Result<()> {
         config.stdout.flush()?;
 
         let ke = loop {
-            if let Some(e) = editor::read()? {
-                break e;
-            };
+            match editor::read()? {
+                Some(event::Event::Key(ke)) => break ke,
+                Some(event::Event::Resize(c, r)) => {
+                    config.screen_cols = c;
+                    config.screen_rows = r;
+
+                    editor::refresh_screen(&mut config)?;
+                }
+                _ => ()
+            }
         };
 
         config = editor::process_key_event(config, &ke)?;

@@ -2,7 +2,7 @@ use std::io::{self, Write};
 
 use crossterm::{cursor::{Hide, MoveTo, Show}, event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, ExecutableCommand, QueueableCommand};
 
-use crate::{cleanup::CleanUp, file};
+use crate::cleanup::CleanUp;
 use crate::file::Row;
 
 const MINO_VER: &'static str = "0.1.0";
@@ -56,8 +56,8 @@ impl Config {
     }
 }
 
-/// Reads in an event and then returns it if it was a `KeyEvent`, otherwise it just throws it away.
-pub fn read() -> io::Result<Option<event::KeyEvent>> {
+/// Reads an event and then returns it if it was a `KeyEvent`, otherwise it just throws it away.
+pub fn read() -> io::Result<Option<event::Event>> {
     let e = event::read()?;
 
     if let Event::Key(KeyEvent {
@@ -66,12 +66,14 @@ pub fn read() -> io::Result<Option<event::KeyEvent>> {
         modifiers,
         state,
     }) = e {
-        Ok(Some(KeyEvent {
+        Ok(Some(Event::Key(KeyEvent {
             kind: KeyEventKind::Press,
             code,
             modifiers,
             state
-        }))
+        })))
+    } else if let Event::Resize(cols, rows) = e {
+        Ok(Some(Event::Resize(cols, rows)))
     } else {
         Ok(None)
     }
@@ -111,6 +113,7 @@ pub fn refresh_screen(config: &mut Config) -> io::Result<()> {
     draw_rows(config)?;
 
     config.stdout.queue(MoveTo(config.cx - config.col_offset, config.cy - config.row_offset))?;
+    
     config.stdout.queue(Show)?;
 
     Ok(())
@@ -133,7 +136,7 @@ pub fn scroll(config: &mut Config) {
     if config.cx < config.col_offset {
         config.col_offset = config.cx;
     } else if config.cx >= config.col_offset + config.screen_cols {
-        config.col_offset = config.cx - config.screen_rows + 1;
+        config.col_offset = config.cx - config.screen_cols + 1;
     }
 }
 
@@ -206,7 +209,7 @@ fn draw_rows(config: &mut Config) -> io::Result<()> {
 }
 
 pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
-    let row = if config.cy >= config.num_rows {
+    let mut row = if config.cy >= config.num_rows {
         None
     } else {
         Some(&config.rows[config.cy as usize])
@@ -218,17 +221,48 @@ pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
         }
         KeyCode::Char('a') | KeyCode::Left  => if config.cx != 0 {
             config.cx -= 1
+        } else if config.cy != 0 {
+            config.cy -= 1;
+            config.cx = usize_to_u16(config.rows[config.cy as usize].size);
         }
         KeyCode::Char('s') | KeyCode::Down  => if config.cy < config.num_rows {
             config.cy += 1
         }
-        KeyCode::Char('d') | KeyCode::Right => if row.is_some() && (config.cx as usize) < row.unwrap().size {
-            config.cx += 1
+        KeyCode::Char('d') | KeyCode::Right => if row.is_some() {
+            if (config.cx as usize) < row.unwrap().size {
+                config.cx += 1
+            } else {
+                config.cy += 1;
+                config.cx = 0;
+            }
         }
         _                                   => ()
     }
 
+    // Cursor jump back to end of line when going from longer line to smaller one.
+    row = if config.cy >= config.num_rows {
+        None
+    } else {
+        Some(&config.rows[config.cy as usize])
+    };
+
+    let len = if let Some(r) = row {
+        r.size
+    } else {
+        0
+    };
+
+    if config.cx as usize > len {
+        // Size of row shouldn't be longer than a u16, so just strip larger bits
+        config.cx = usize_to_u16(len);
+    }
+
     Ok(())
+}
+
+/// Converts `usize` to `u16` assuming `n` is less than `u16::MAX`.
+fn usize_to_u16(n: usize) -> u16 {
+    (n & (u16::MAX as usize)) as u16
 }
 
 fn key_mod(bits: u8) -> KeyModifiers {
