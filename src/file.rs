@@ -1,6 +1,6 @@
 use std::fs;
-use std::fs::OpenOptions;
-use std::io::{self, BufRead, BufReader};
+use std::io;
+use std::ops;
 
 use crate::editor::Config;
 
@@ -9,6 +9,19 @@ use crate::editor::Config;
 pub struct Row {
     pub size: usize,
     pub chars: String
+}
+
+impl Row {
+    /// Gets the characters at the given `range`. If any values of the range go out of bounds of the row's text, they are not used, so that it will not fail. If the range is entirely out of bounds, then all chars will not be used, returning an empty `String`.
+    pub fn chars_at(&self, mut range: ops::Range<usize>) -> String {
+        if range.start >= self.size {
+            return String::from("");
+        } else if range.end > self.size {
+            range.end = self.size;
+        }
+        
+        self.chars[range].to_owned()
+    }
 }
 
 pub fn open(config: &mut Config, path: String) -> io::Result<()> {    
@@ -20,21 +33,6 @@ pub fn open(config: &mut Config, path: String) -> io::Result<()> {
     string
         .lines()
         .for_each(|l| append_row(config, l.to_owned()));
-
-    // for line in string.lines() {
-    //     let mut size = line.len();
-
-    //     if size > config.screen_cols as usize {
-    //         size = config.screen_cols as usize;
-    //     }
-
-    //     append_row(config, line.to_owned());
-    // }
-
-    // let line = string.lines().next().unwrap();
-
-
-    // append_row(config, line.to_owned());
 
     Ok(())
 }

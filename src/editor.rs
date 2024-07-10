@@ -2,7 +2,7 @@ use std::io::{self, Write};
 
 use crossterm::{cursor::{Hide, MoveTo, Show}, event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, ExecutableCommand, QueueableCommand};
 
-use crate::cleanup::CleanUp;
+use crate::{cleanup::CleanUp, file};
 use crate::file::Row;
 
 const MINO_VER: &'static str = "0.1.0";
@@ -23,6 +23,7 @@ pub struct Config {
     pub screen_rows: u16,
     pub screen_cols: u16,
     pub row_offset: u16,
+    pub col_offset: u16,
     pub cx: u16,
     pub cy: u16,
     pub num_rows: u16,
@@ -40,6 +41,7 @@ impl Config {
             screen_rows,
             screen_cols,
             row_offset: 0,
+            col_offset: 0,
             cx: 0,
             cy: 0,
             num_rows: 0,
@@ -63,8 +65,7 @@ pub fn read() -> io::Result<Option<event::KeyEvent>> {
         code,
         modifiers,
         state,
-    }
-    ) = e {
+    }) = e {
         Ok(Some(KeyEvent {
             kind: KeyEventKind::Press,
             code,
@@ -102,12 +103,14 @@ pub fn reset_screen(config: &mut Config) -> io::Result<()> {
 }
 
 pub fn refresh_screen(config: &mut Config) -> io::Result<()> {
+    scroll(config);
+
     config.stdout.queue(Hide)?;
     config.stdout.queue(MoveTo(0, 0))?;
 
     draw_rows(config)?;
 
-    config.stdout.queue(MoveTo(config.cx, config.cy))?;
+    config.stdout.queue(MoveTo(config.cx - config.col_offset, config.cy - config.row_offset))?;
     config.stdout.queue(Show)?;
 
     Ok(())
@@ -120,11 +123,28 @@ pub fn clear_screen(config: &mut Config) -> io::Result<()> {
     Ok(())
 }
 
+pub fn scroll(config: &mut Config) {
+    if config.cy < config.row_offset {
+        config.row_offset = config.cy;
+    } else if config.cy >= config.row_offset + config.screen_rows {
+        config.row_offset = config.cy - config.screen_rows + 1;
+    }
+
+    if config.cx < config.col_offset {
+        config.col_offset = config.cx;
+    } else if config.cx >= config.col_offset + config.screen_cols {
+        config.col_offset = config.cx - config.screen_rows + 1;
+    }
+}
+
 fn draw_rows(config: &mut Config) -> io::Result<()> {
+    config.stdout.queue(Clear(ClearType::CurrentLine))?;
+
     let y_max = config.screen_rows;
     for y in 0..y_max {
-        let file_row = y + config.row_offset;
-        if file_row >= config.num_rows {
+        let file_row = (y + config.row_offset) as usize;
+
+        if file_row >= config.num_rows as usize {
             let str = if config.num_rows == 0 && y == config.screen_rows / 3 {
                 // Display welcome screen
                 let mut welcome = format!("Mino editor -- version {MINO_VER}");
@@ -153,30 +173,45 @@ fn draw_rows(config: &mut Config) -> io::Result<()> {
             };
 
             config.stdout.queue(Print(str))?;
-            config.stdout.queue(Clear(ClearType::UntilNewLine))?;
         } else {
-            let len = if config.rows[file_row as usize].size > config.screen_cols as usize {
+            let row_size = config.rows[file_row].size;
+
+            let len = if row_size <= config.col_offset as usize {
+                0
+            } else if row_size - config.col_offset as usize > config.screen_cols as usize {
                 config.screen_cols as usize
             } else {
-                config.rows[file_row as usize].size
+                row_size - config.col_offset as usize
             };
 
-            let msg = &config.rows[y as usize].chars[..len];
+            let msg = config
+                .rows[file_row as usize]
+                .chars_at(
+                    config.col_offset as usize
+                    ..config.col_offset as usize + len
+                );
 
-            if file_row < y_max - 1 {
-                config.stdout.queue(Print(format!("{}\n", msg)))?;
+            // println!("MSG: {}", msg);
+
+            if y < y_max - 1 {
+                config.stdout.queue(Print(format!("{}\r\n", msg)))?;
             } else {
                 config.stdout.queue(Print(format!("{}", msg)))?;
             }
         }
-
-        // std::thread::sleep(std::time::Duration::from_millis(100));
+        config.stdout.queue(Clear(ClearType::UntilNewLine))?;
     }
 
     Ok(())
 }
 
 pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
+    let row = if config.cy >= config.num_rows {
+        None
+    } else {
+        Some(&config.rows[config.cy as usize])
+    };
+
     match key {
         KeyCode::Char('w') | KeyCode::Up    => if config.cy != 0 { 
             config.cy -= 1
@@ -184,10 +219,10 @@ pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
         KeyCode::Char('a') | KeyCode::Left  => if config.cx != 0 {
             config.cx -= 1
         }
-        KeyCode::Char('s') | KeyCode::Down  => if config.cy + 1 < config.num_rows {
+        KeyCode::Char('s') | KeyCode::Down  => if config.cy < config.num_rows {
             config.cy += 1
         }
-        KeyCode::Char('d') | KeyCode::Right => if config.cx != config.screen_cols - 1 {
+        KeyCode::Char('d') | KeyCode::Right => if row.is_some() && (config.cx as usize) < row.unwrap().size {
             config.cx += 1
         }
         _                                   => ()
