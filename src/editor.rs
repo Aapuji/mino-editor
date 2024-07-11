@@ -1,18 +1,20 @@
 use std::io::{self, Write};
+use std::time::{self, Duration, Instant};
 
-use crossterm::{cursor::{Hide, MoveTo, Show}, event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, ExecutableCommand, QueueableCommand};
+use crossterm::{
+    cursor::{Hide, MoveTo, Show}, 
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers}, 
+    style::Print, 
+    terminal::{self, Clear, ClearType}, 
+    QueueableCommand
+};
 
-use crate::cleanup::CleanUp;
-use crate::file::Row;
+use crate::{cleanup::CleanUp, file::{self, append_row}};
+use crate::file::{cx_to_rx, update_row, Row};
 
-const MINO_VER: &'static str = "0.1.0";
-
-const NONE:     u8 = 0b0000_0000;     
-const SHIFT:    u8 = 0b0000_0001;
-const CONTROL:  u8 = 0b0000_0010;
-const ALT:      u8 = 0b0000_0100;
-
-const ERASE_TERM: &'static str = "\x1bc";
+const MINO_VER: &'static str    = "0.1.0";
+const ERASE_TERM: &'static str  = "\x1bc";
+const MSG_BAR_LIFE: Duration    = Duration::from_secs(5);
 
 // Perhaps in future, rename to EState (editor state), because user may have configuration options?
 /// Holds global state information about the program
@@ -26,8 +28,12 @@ pub struct Config {
     pub col_offset: u16,
     pub cx: u16,
     pub cy: u16,
+    pub rx: u16,
     pub num_rows: u16,
     pub rows: Vec<Row>,
+    pub file_name: String,
+    pub status_msg: String,
+    pub status_msg_ts: Instant,
     pub _clean_up: CleanUp
 }
 
@@ -38,16 +44,28 @@ impl Config {
         Self {
             stdin: io::stdin(),
             stdout: io::stdout(),
-            screen_rows,
+            screen_rows: screen_rows - 2,    // Make room for status bar & status message
             screen_cols,
             row_offset: 0,
             col_offset: 0,
             cx: 0,
             cy: 0,
+            rx: 0,
             num_rows: 0,
             rows: vec![],
+            file_name: String::new(),
+            status_msg: String::new(),
+            status_msg_ts: Instant::now(),
             _clean_up: CleanUp
         }
+    }
+
+    pub fn get_row(&self) -> &Row {
+        &self.rows[self.cy as usize]
+    }
+
+    pub fn get_row_mut(&mut self) -> &mut Row {
+        &mut self.rows[self.cy as usize]
     }
 
     pub fn clean_up(mut self) {
@@ -79,13 +97,17 @@ pub fn read() -> io::Result<Option<event::Event>> {
     }
 }
 
+pub fn report_error(config: &mut Config, msg: String) -> io::Result<()> {
+
+    Ok(())
+}
+
 pub fn init_screen(config: &mut Config) -> io::Result<()> {
     reset_screen(config)?;
     config.stdout.flush()?;
 
     Ok(())
 }
-
 
 /// Bitwise-ANDs `ch` with `0x1f`. Equivalent to keycode of CTRL+`ch`.
 pub fn ctrl_key(ch: char) -> char {
@@ -111,8 +133,10 @@ pub fn refresh_screen(config: &mut Config) -> io::Result<()> {
     config.stdout.queue(MoveTo(0, 0))?;
 
     draw_rows(config)?;
+    draw_status_bar(config)?;
+    draw_msg_bar(config)?;
 
-    config.stdout.queue(MoveTo(config.cx - config.col_offset, config.cy - config.row_offset))?;
+    config.stdout.queue(MoveTo(config.rx - config.col_offset, config.cy - config.row_offset))?;
     
     config.stdout.queue(Show)?;
 
@@ -127,21 +151,75 @@ pub fn clear_screen(config: &mut Config) -> io::Result<()> {
 }
 
 pub fn scroll(config: &mut Config) {
+    config.rx = config.cx;
+    if config.cy < config.num_rows {
+        config.rx = cx_to_rx(config.get_row(), config.cx);
+    }
+
     if config.cy < config.row_offset {
         config.row_offset = config.cy;
     } else if config.cy >= config.row_offset + config.screen_rows {
         config.row_offset = config.cy - config.screen_rows + 1;
     }
 
-    if config.cx < config.col_offset {
-        config.col_offset = config.cx;
-    } else if config.cx >= config.col_offset + config.screen_cols {
-        config.col_offset = config.cx - config.screen_cols + 1;
+    if config.rx < config.col_offset {
+        config.col_offset = config.rx;
+    } else if config.rx >= config.col_offset + config.screen_cols {
+        config.col_offset = config.rx - config.screen_cols + 1;
     }
+}
+
+pub fn draw_status_bar(config: &mut Config) -> io::Result<()> {
+    config.stdout.queue(Print("\x1b[7m"))?;
+
+    // File name & number lines
+    let status_file = format!("{:.20} - {} lines", if config.file_name.is_empty() {
+        "[No Name]"
+    } else {
+        &config.file_name[..]
+    }, config.num_rows);
+
+    let status_line = format!("{}/{}", config.cy + 1, config.num_rows);
+
+    config.stdout.queue(Print(&status_file))?;
+
+    for i in status_file.len()..config.screen_cols as usize {
+        if config.screen_cols as usize - i == status_line.len() {
+            config.stdout.queue(Print(status_line))?;
+            break;
+        } else {
+            config.stdout.queue(Print(" "))?;
+        }
+    }
+
+    config.stdout.queue(Print("\x1b[m\r\n"))?;
+
+    Ok(())
+}
+
+/// Given vector of messages, it attemps to write a new message
+pub fn set_status_msg(config: &mut Config, msg: String) {
+    config.status_msg = msg;
+
+    config.status_msg.truncate(config.screen_cols as usize);
+
+    config.status_msg_ts = time::Instant::now();
+}
+
+pub fn draw_msg_bar(config: &mut Config) -> io::Result<()> {
+    config.stdout.queue(Clear(ClearType::CurrentLine))?;
+
+    if config.status_msg.len() > 0 && config.status_msg_ts.elapsed() < MSG_BAR_LIFE {
+        config.stdout.queue(Print(config.status_msg.clone()))?;
+    }
+
+    Ok(())
 }
 
 fn draw_rows(config: &mut Config) -> io::Result<()> {
     config.stdout.queue(Clear(ClearType::CurrentLine))?;
+
+    let num_len = config.num_rows.to_string().len();
 
     let y_max = config.screen_rows;
     for y in 0..y_max {
@@ -169,15 +247,12 @@ fn draw_rows(config: &mut Config) -> io::Result<()> {
 
                 welcome.truncate(welcome_len);
                 format!("{welcome}\r\n")
-            } else if y < y_max - 1 {
-                format!("~\r\n")
             } else {
-                format!("~")
+                format!("~\r\n")
             };
-
             config.stdout.queue(Print(str))?;
         } else {
-            let row_size = config.rows[file_row].size;
+            let row_size = config.rows[file_row].rsize;
 
             let len = if row_size <= config.col_offset as usize {
                 0
@@ -194,13 +269,9 @@ fn draw_rows(config: &mut Config) -> io::Result<()> {
                     ..config.col_offset as usize + len
                 );
 
-            // println!("MSG: {}", msg);
+            // config.stdout.queue(Print(format!("\x1b[38;5;150m{file_row:num_len$}\x1b[m {msg}\r\n")))?;
+            config.stdout.queue(Print(format!("{msg}\r\n")))?;
 
-            if y < y_max - 1 {
-                config.stdout.queue(Print(format!("{}\r\n", msg)))?;
-            } else {
-                config.stdout.queue(Print(format!("{}", msg)))?;
-            }
         }
         config.stdout.queue(Clear(ClearType::UntilNewLine))?;
     }
@@ -212,7 +283,7 @@ pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
     let mut row = if config.cy >= config.num_rows {
         None
     } else {
-        Some(&config.rows[config.cy as usize])
+        Some(config.get_row())
     };
 
     match key {
@@ -223,7 +294,7 @@ pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
             config.cx -= 1
         } else if config.cy != 0 {
             config.cy -= 1;
-            config.cx = usize_to_u16(config.rows[config.cy as usize].size);
+            config.cx = usize_to_u16(config.get_row().size);
         }
         KeyCode::Char('s') | KeyCode::Down  => if config.cy < config.num_rows {
             config.cy += 1
@@ -243,7 +314,7 @@ pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
     row = if config.cy >= config.num_rows {
         None
     } else {
-        Some(&config.rows[config.cy as usize])
+        Some(config.get_row())
     };
 
     let len = if let Some(r) = row {
@@ -261,7 +332,7 @@ pub fn move_cursor(config: &mut Config, key: KeyCode) -> io::Result<()> {
 }
 
 /// Converts `usize` to `u16` assuming `n` is less than `u16::MAX`.
-fn usize_to_u16(n: usize) -> u16 {
+pub fn usize_to_u16(n: usize) -> u16 {
     (n & (u16::MAX as usize)) as u16
 }
 
@@ -286,26 +357,32 @@ pub fn process_key_event(mut config: Config, key: &KeyEvent) -> io::Result<Confi
         // Quit (CTRL+Q)
         KeyEvent { 
             code: KeyCode::Char('q'), 
-            modifiers: m,
+            modifiers: KeyModifiers::CONTROL,
             ..
-        } if m == key_mod(CONTROL) => {
+        } => {
             config.clean_up();
             std::process::exit(0);
         }
 
+        KeyEvent { 
+            code: KeyCode::Char('s'),
+            modifiers: KeyModifiers::CONTROL, 
+            ..
+        } => {
+            file::save(&mut config)?;
+
+            Ok(config)
+        }
+
         // Move (wasd/arrows)
         KeyEvent {
-            code: KeyCode::Char('w') |
-                  KeyCode::Char('a') |
-                  KeyCode::Char('s') |
-                  KeyCode::Char('d') |
-                  KeyCode::Up        |
+            code: KeyCode::Up        |
                   KeyCode::Down      |
                   KeyCode::Left      |
                   KeyCode::Right,
-            modifiers: m,
+            modifiers: KeyModifiers::NONE,
             ..
-        } if m == key_mod(NONE) => {
+        } => {
             move_cursor(&mut config, key.code)?;
             
             Ok(config)
@@ -314,13 +391,21 @@ pub fn process_key_event(mut config: Config, key: &KeyEvent) -> io::Result<Confi
         // Page Up/Page Down
         KeyEvent { 
             code: code @ (KeyCode::PageUp | KeyCode::PageDown), 
-            modifiers: m, 
+            modifiers: KeyModifiers::NONE, 
             ..
-        } if m == key_mod(NONE) => {
+        } => {
             if code == KeyCode::PageUp {
-                config.cy = 0;
+                config.cy = config.row_offset;
             } else {
-                config.cy = config.screen_rows;
+                config.cy = config.row_offset + config.screen_rows - 1;
+            }
+
+            for _ in 0..config.screen_rows {
+                move_cursor(&mut config, if code == KeyCode::PageUp {
+                    KeyCode::Up
+                } else {
+                    KeyCode::Down
+                })?;
             }
 
             Ok(config)
@@ -329,27 +414,154 @@ pub fn process_key_event(mut config: Config, key: &KeyEvent) -> io::Result<Confi
         // Home/End
         KeyEvent { 
             code: code @ (KeyCode::Home | KeyCode::End), 
-            modifiers: m, 
+            modifiers: KeyModifiers::NONE, 
             ..
-        } if m == key_mod(NONE) => {
+        } => {
             if code == KeyCode::Home {
                 config.cx = 0;
-            } else {
-                config.cx = config.screen_cols;
+            } else if config.cy < config.num_rows {
+                config.cx = usize_to_u16(config.get_row().size);
             }
 
             Ok(config)
         }
 
-        // Delete
+        // Enter (make new line)
         KeyEvent { 
-            code: KeyCode::Delete, 
-            modifiers: m, 
+            code: KeyCode::Enter, 
+            modifiers: KeyModifiers::NONE, 
+            .. 
+        } => {
+            if config.cy <= config.num_rows {
+                split_row(&mut config);
+
+                // config.num_rows += 1;
+            }
+
+            Ok(config)
+        }
+
+        // Backspace/Delete (remove char)
+        KeyEvent { 
+            code: code @ (KeyCode::Backspace | KeyCode::Delete), 
+            modifiers: KeyModifiers::NONE, 
             ..
-        } if m == key_mod(NONE) => {
+        } => {
+            if code == KeyCode::Backspace {
+                if config.cx > 0 {
+                    remove_char(&mut config, 0);
+                } else if config.cy > 0 {
+                    merge_prev_row(&mut config);
+                }
+            } else {
+                if config.cx < config.get_row().size as u16 {
+                    remove_char(&mut config, 1);
+                } else if config.cy < config.num_rows {
+                    merge_next_row(&mut config);
+                }
+            }
+
+            Ok(config)
+        }
+
+        // Tab
+        // KeyEvent { 
+        //     code: KeyCode::Tab, 
+        //     modifiers: KeyModifiers::NONE, 
+        //     .. 
+        // } => {
+        //     insert_char(&mut config, '\t');
+
+        //     config.cx += 1;
+
+        //     Ok(config)
+        // }
+
+        // Any other character with nothing or with Shift (write it)
+        KeyEvent { 
+            code: KeyCode::Char(ch), 
+            modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT, 
+            .. 
+        } => {
+            insert_char(&mut config, ch);
+
+            Ok(config)
+        }
+
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            .. 
+        } => {
             Ok(config)
         }
 
         _ => Ok(config)
     }
+}
+
+pub fn insert_char(config: &mut Config, ch: char) {
+    if config.cy == config.num_rows {
+        append_row(config, String::new());
+    }
+
+    let file_col = (config.cx + config.col_offset) as usize;
+    file::insert_char(config.get_row_mut(), file_col, ch);
+
+    config.cx += 1;
+}
+
+/// Removes character at`config.cx + offset - 1`.
+/// offset 0 for Backspace, 1 for Delete
+pub fn remove_char(config: &mut Config, offset: u16) {
+    if config.cy >= config.num_rows {
+        return;
+    }
+
+    let cx = (config.cx + offset) as usize;
+    file::remove_char(config.get_row_mut(), cx - 1);
+
+    config.cx -= 1 - offset;
+}
+
+pub fn split_row(config: &mut Config) {
+    let cx = config.cx;
+    let col_offset = config.col_offset;
+
+    let row = file::split_row(config.get_row_mut(), (cx + col_offset) as usize);
+    config.rows.insert((config.cy + config.row_offset + 1) as usize, row);
+
+    config.cx = 0;
+    config.cy += 1;
+    config.num_rows += 1;
+}
+
+pub fn merge_prev_row(config: &mut Config) {
+    if config.cy >= config.num_rows {
+        return;
+    }
+
+    config.cy -= 1;
+    let prev_row_len = config.get_row().size;
+    config.cy += 1;
+
+    let file_row = (config.cy + config.row_offset) as usize;
+    file::merge_rows(&mut config.rows, file_row - 1, file_row);
+
+    config.cy -= 1;
+    config.cx = usize_to_u16(prev_row_len);
+
+    config.num_rows -= 1;
+}
+
+pub fn merge_next_row(config: &mut Config) {
+    if config.cy >= config.num_rows {
+        return;
+    }
+
+    // let cx = config.cx as usize;
+    let file_row = (config.cy + config.row_offset) as usize;
+    file::merge_rows(&mut config.rows, file_row, file_row + 1);
+
+    config.num_rows -= 1;
 }
