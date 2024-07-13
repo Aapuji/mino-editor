@@ -40,9 +40,10 @@ impl Row {
 }
 
 pub fn open(config: &mut Config, path: &String) -> io::Result<()> {    
-    if !std::path::Path::new(path).is_file() {
-        editor::report_error(config, format!("Specified path is not a valid path: {path}"))?;
-    }
+    // if !std::path::Path::new(path).is_file() {
+    //     editor::report_error(config, format!("Specified path is not a valid path: {path}"))?;
+    //     // fs::write(path, "")?;
+    // }
 
     config.file_name = path.clone();
     
@@ -54,6 +55,8 @@ pub fn open(config: &mut Config, path: &String) -> io::Result<()> {
     string
         .lines()
         .for_each(|l| append_row(config, l.to_owned()));
+    
+    config.is_dirty = false;
 
     // Make space for line numbers
     // config.screen_cols -= editor::usize_to_u16(config.num_rows.to_string().len()) + 1;
@@ -63,8 +66,17 @@ pub fn open(config: &mut Config, path: &String) -> io::Result<()> {
 
 // Returns # of bytes written
 pub fn save(config: &mut Config) -> io::Result<usize> {
+    // Did not enter a file name when opening text editor
     if config.file_name.trim().is_empty() {
-        return Ok(0); // TODO: "Create new file" prompt?
+        config.file_name = match editor::prompt(config, "Save as (ESC to cancel): ".to_owned())? {
+            Some(val) => val,
+            None => {
+                editor::set_status_msg(config, "Save aborted".to_owned());
+
+                return Ok(0);
+            }
+        };
+        // return Ok(0); // TODO: "Create new file" prompt?
     }
 
     let text = rows_to_string(config);
@@ -73,6 +85,7 @@ pub fn save(config: &mut Config) -> io::Result<usize> {
 
     fs::File::create(&config.file_name)?.write_all(bytes)?;
 
+    config.is_dirty = false;
     editor::set_status_msg(config, format!("{} bytes written to disk", bytes_wrote));
 
     Ok(bytes_wrote)
@@ -100,7 +113,7 @@ pub fn append_row(config: &mut Config, str: String) {
 
     config.rows.push(row);
     config.num_rows += 1;
-
+    config.is_dirty = true;
 }
 
 pub fn update_row(row: &mut Row) {
