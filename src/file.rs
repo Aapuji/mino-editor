@@ -2,7 +2,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::ops;
 
-use crate::editor;
+use crate::editor::{self, usize_to_u16};
 use crate::editor::Config;
 
 pub const TAB_STOP: u16 = 4;
@@ -68,7 +68,7 @@ pub fn open(config: &mut Config, path: &String) -> io::Result<()> {
 pub fn save(config: &mut Config) -> io::Result<usize> {
     // Did not enter a file name when opening text editor
     if config.file_name.trim().is_empty() {
-        config.file_name = match editor::prompt(config, "Save as (ESC to cancel): ".to_owned())? {
+        config.file_name = match editor::prompt(config, "Save as (ESC to cancel): ".to_owned(), &|_, _, _| {})? {
             Some(val) => val,
             None => {
                 editor::set_status_msg(config, "Save aborted".to_owned());
@@ -206,4 +206,25 @@ pub fn cx_to_rx(row: &Row, cx: u16) -> u16 {
     }
 
     rx
+}
+
+pub fn rx_to_cx(row: &Row, rx: u16) -> u16 {
+    let mut cur_rx = 0;
+    
+    let mut cx = 0;
+    for ch in row.chars.chars() {
+        if ch == '\t' {
+            cur_rx += (TAB_STOP - 1) - (cur_rx % TAB_STOP);
+        }
+
+        cur_rx += 1;
+
+        if cur_rx > rx {
+            return usize_to_u16(cx);
+        }
+
+        cx += 1;
+    }
+
+    usize_to_u16(cx)
 }

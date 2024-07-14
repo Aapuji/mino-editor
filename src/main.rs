@@ -18,7 +18,7 @@ fn main() -> io::Result<()> {
         file::open(&mut config, &path)?;
     }
 
-    editor::set_status_msg(&mut config, "HELP: Ctrl-Q = Quit | Ctrl-S = Save".to_owned());
+    editor::set_status_msg(&mut config, "HELP: CTRL+Q = Quit | CTRL+S = Save | CTRL+F = Find".to_owned());
 
     loop {
         editor::refresh_screen(&mut config)?;

@@ -38,6 +38,8 @@ pub struct Config {
     pub status_msg: String,
     pub status_msg_ts: Instant,
     pub quit_times: u32,  // Used to check if Ctrl-Q is pressed again (for force quit unsaved changes)
+    pub last_match: Option<u16>,    // Row number of previous match to a Ctrl+F.
+    pub search_forward: bool,   // false for backwards, true for forwards
     pub _clean_up: CleanUp
 }
 
@@ -62,6 +64,8 @@ impl Config {
             status_msg: String::new(),
             status_msg_ts: Instant::now(),
             quit_times: 0,
+            last_match: None,
+            search_forward: true,
             _clean_up: CleanUp
         }
     }
@@ -226,7 +230,10 @@ pub fn draw_msg_bar(config: &mut Config) -> io::Result<()> {
     Ok(())
 }
 
-pub fn prompt(config: &mut Config, prompt: String) -> io::Result<Option<String>> {
+pub fn prompt<F>(config: &mut Config, prompt: String, f: &F) -> io::Result<Option<String>> 
+where 
+    F: Fn(&mut Config, String, KeyEvent)
+{
     let mut text = String::new();
     
     loop {
@@ -248,6 +255,9 @@ pub fn prompt(config: &mut Config, prompt: String) -> io::Result<Option<String>>
                 ..
             } => {
                 if text.len() != 0 {
+                    set_status_msg(config, String::new());
+                    f(config, text.clone(), e);
+
                     return Ok(Some(text));
                 }
             }
@@ -259,6 +269,8 @@ pub fn prompt(config: &mut Config, prompt: String) -> io::Result<Option<String>>
                 ..
             } => {
                 set_status_msg(config, String::new());
+                f(config, text.clone(), e);
+
                 return Ok(None);
             }
 
@@ -285,6 +297,106 @@ pub fn prompt(config: &mut Config, prompt: String) -> io::Result<Option<String>>
             // Anything else
             _ => ()
         }
+
+        f(config, text.clone(), e);
+    }
+}
+
+pub fn find(config: &mut Config) -> io::Result<()> {
+    let saved_cx = config.cx;
+    let saved_cy = config.cy;
+    let saved_coloff = config.col_offset;
+    let saved_rowoff = config.row_offset;
+    
+    if let None = prompt(
+        config, 
+        "Search (Use ESC/Arrows/Enter): ".to_owned(), 
+        &|config, query, ke| incremental_search(config, query, ke)
+    )? {
+        config.cx = saved_cx;
+        config.cy = saved_cy;
+        config.col_offset = saved_coloff;
+        config.row_offset = saved_rowoff;
+    }
+
+    Ok(())
+}
+
+fn incremental_search(config: &mut Config, query: String, ke: KeyEvent) {
+    match ke {
+        // Leave Search
+        KeyEvent { 
+            code: KeyCode::Esc | KeyCode::Enter, 
+            modifiers: KeyModifiers::NONE, 
+            ..
+        } => {
+            config.last_match = None;
+            config.search_forward = true;
+            
+            return;
+        }
+
+        // Move to next item
+        KeyEvent { 
+            code: KeyCode::Right | KeyCode::Down, 
+            modifiers: KeyModifiers::NONE, 
+            .. 
+        } => {
+            config.search_forward = true;
+        }
+
+        // Move to prev item
+        KeyEvent { 
+            code: KeyCode::Left | KeyCode::Up, 
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            config.search_forward = false;
+        }
+
+        // Anything else
+        _ => {
+            config.last_match = None;
+            config.search_forward = true;
+        }
+    }
+
+    let mut current_line = if config.last_match.is_none() {
+        config.search_forward = true;
+        -1
+    } else {
+        config.last_match.unwrap() as i32
+    };
+
+    for _ in &config.rows {
+        current_line += if config.search_forward { 1 } else { -1 };
+        if current_line == -1 {
+            current_line = (config.num_rows - 1) as i32;
+        } else if current_line == config.num_rows as i32 {
+            current_line = 0;
+        }
+
+        let row = &config.rows[i32_to_u16_lossy(current_line).0 as usize];
+
+        let found_at = row.render.find(&query);
+
+        if let Some(idx) = found_at {
+            config.last_match = i32_to_u16_lossy(current_line).1;
+            config.cy = i32_to_u16_lossy(current_line).0;
+            config.cx = file::rx_to_cx(&row, usize_to_u16(idx));
+            config.row_offset = config.num_rows;    // For scrolling behavior
+            break;
+        }
+    }
+}
+
+/// Converts i32 to u16 (throws away higher values), if 
+fn i32_to_u16_lossy(i32: i32) -> (u16, Option<u16>) {
+    if i32 < 0 {
+        (0, None)
+    } else {
+        let x = (i32 & u16::MAX as i32) as u16;
+        (x, Some(x))
     }
 }
 
@@ -438,12 +550,22 @@ pub fn process_key_event(mut config: Config, key: &KeyEvent) -> io::Result<Confi
             }
         }
 
+        // Save (CTRL+S)
         KeyEvent { 
             code: KeyCode::Char('s'),
             modifiers: KeyModifiers::CONTROL, 
             ..
         } => {
             file::save(&mut config)?;
+        }
+
+        // Find (CTRL+F)
+        KeyEvent { 
+            code: KeyCode::Char('f'), 
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => {
+            find(&mut config)?;
         }
 
         // Move (wasd/arrows)
