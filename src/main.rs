@@ -1,42 +1,35 @@
+mod buffer;
 mod cleanup;
+mod cli;
+mod config;
 mod editor;
-mod file;
+mod error;
+mod screen;
+mod status;
+mod util;
 
-use std::io::{self, Write};
 use std::env;
-use crossterm::{event, terminal};
+use buffer::TextBuffer;
+use cleanup::CleanUp;
+use cli::Cli;
+use crossterm::terminal::enable_raw_mode;
+use clap::Parser;
+use editor::Editor;
 
-fn main() -> io::Result<()> {
-    terminal::enable_raw_mode().expect("Couldn't enable raw mode.");
+const MINO_VER: &str = env!("CARGO_PKG_VERSION");
 
-    let mut args = env::args().skip(1);
-    let mut config = editor::Config::init();
-
-    editor::init_screen(&mut config)?;
+fn setup() -> CleanUp {
+    enable_raw_mode().expect("An error occurred when trying to setup the program.");
     
-    if let Some(path) = args.next() {
-        file::open(&mut config, &path)?;
-    }
+    CleanUp
+}
 
-    editor::set_status_msg(&mut config, "HELP: CTRL+Q = Quit | CTRL+S = Save | CTRL+F = Find".to_owned());
+fn main() {
+    let cli = Cli::parse();
 
-    loop {
-        editor::refresh_screen(&mut config)?;
-        config.stdout.flush()?;
+    let _clean_up = setup();
 
-        let ke = loop {
-            match editor::read()? {
-                Some(event::Event::Key(ke)) => break ke,
-                Some(event::Event::Resize(c, r)) => {
-                    config.screen_cols = c;
-                    config.screen_rows = r - 2;
+    let editor = Editor::open_from(&cli.files()[0]).expect("Error occurred");
 
-                    editor::refresh_screen(&mut config)?;
-                }
-                _ => ()
-            }
-        };
-
-        config = editor::process_key_event(config, &ke)?;
-    }
+    println!("{:#?}", editor.get_buf().rows().iter().map(|r| r.render()).collect::<Vec<&str>>());
 }
