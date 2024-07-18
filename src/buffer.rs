@@ -1,6 +1,7 @@
-use std::{fs, io, ops};
+use std::fs;
+use std::ops;
 
-use crate::error::Error;
+use crate::error::{self, Error};
 use crate::config::Config;
 
 /// Holds the text buffer that will be displayed in the editor.
@@ -24,7 +25,7 @@ impl TextBuffer {
     }
 
     /// Opens the contents of a file and turns it into the `TextBuffer`'s contents.
-    pub fn open(&mut self, path: &str, config: &Config) -> Result<(), Error> {
+    pub fn open(&mut self, path: &str, config: &Config) -> error::Result<()> {
         self.file_name = path.to_owned();
 
         let text = fs::read_to_string(&self.file_name).map_err(Error::from)?;
@@ -63,6 +64,22 @@ impl TextBuffer {
 
     pub fn num_rows(&self) -> usize {
         self.num_rows
+    }
+
+    pub fn num_rows_mut(&mut self) -> &mut usize {
+        &mut self.num_rows
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.is_dirty
+    }
+
+    pub fn make_dirty(&mut self) {
+        self.is_dirty = true;
+    }
+
+    pub fn make_clean(&mut self) {
+        self.is_dirty = false;
     }
 }
 

@@ -3,7 +3,9 @@ use crossterm::{
     event::{self, Event, KeyEvent, KeyEventKind}
 };
 
-use crate::{buffer::TextBuffer, config::Config, error::Error, screen::Screen};
+use crate::buffer::TextBuffer;
+use crate::config::Config;
+use crate::error::{self, Error};
 
 #[derive(Debug)]
 pub struct Editor {
@@ -25,7 +27,7 @@ impl Editor {
         }
     }
 
-    pub fn open_from(path: &str) -> Result<Self, Error> {
+    pub fn open_from(path: &str) -> error::Result<Self> {
         let mut editor = Self::new();
         let config = *editor.config();
         editor.get_buf_mut().open(path, &config)?;
@@ -33,7 +35,7 @@ impl Editor {
         Ok(editor)
     }
 
-    pub fn read_event(&mut self) -> Result<Option<Event>, Error> {
+    pub fn read_event(&mut self) -> error::Result<Option<Event>> {
         let e = event::read().map_err(Error::from)?;
 
         match e {

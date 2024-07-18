@@ -9,7 +9,6 @@ mod status;
 mod util;
 
 use std::env;
-use buffer::TextBuffer;
 use cleanup::CleanUp;
 use cli::Cli;
 use crossterm::terminal::enable_raw_mode;

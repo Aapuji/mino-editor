@@ -26,3 +26,5 @@ impl fmt::Display for Error {
         write!(f, " \x1b[31m\u{26A0}Error!\x1b[31m {}", err_msg)
     }
 }
+
+pub type Result<T> = std::result::Result<T, Error>;
