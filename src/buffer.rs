@@ -37,6 +37,8 @@ impl TextBuffer {
         Ok(())
     }
 
+    // pub fn save(&self)
+
     /// Appends a new row to the end of the `TextBuffer`, given the characters that compose it.
     pub fn append(&mut self, chars: String, config: &Config) {
         let row = Row::from_chars(chars, config);

@@ -245,7 +245,7 @@ impl Screen {
 
                     let msg = format!("\x1b[31mWARNING!\x1b[m File has unsaved changes. Press CTRL+S to save or CTRL+Q {s} to force quit without saving.");
                     
-                    set_status_msg(&mut config, msg);
+                    // set_status_msg(&mut config, msg);
                     *self.editor.quit_times_mut() -= 1;
 
                     return Ok(self);
@@ -380,6 +380,11 @@ impl Screen {
         *self.editor.quit_times_mut() = config.quit_times();
 
         Ok(self)
+    }
+
+    /// Does any clean up actions that require the `Screen`. Then drops itself, which triggers `_clean_up.drop`.
+    pub fn clean_up(mut self) {
+        let _ = self.clear();
     }
 
     pub fn get_row(&self) -> &Row {
