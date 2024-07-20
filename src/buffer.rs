@@ -37,7 +37,15 @@ impl TextBuffer {
         Ok(())
     }
 
-    // pub fn save(&self)
+    /// Attempts to save the contents of the buffer into the file at `file_name`. Returns `Ok` containing the number of bytes written on success and `Err(error::Error)` on failure.
+    // pub fn save(&self, mut file_name: &str) -> usize {
+    //     // Did not enter a file name when opening the text editor
+    //     if file_name.is_empty() {
+    //         file_name = match  {
+
+    //         }
+    //     }
+    // }
 
     /// Appends a new row to the end of the `TextBuffer`, given the characters that compose it.
     pub fn append(&mut self, chars: String, config: &Config) {
@@ -56,6 +64,17 @@ impl TextBuffer {
         self.num_rows += 1;
     }
 
+    pub fn rows_to_string(&self) -> String {
+        let mut s = String::new();
+
+        for row in self.rows.iter() {
+            s.push_str(&row.chars[..]);
+            s.push('\n');
+        }
+    
+        s
+    }
+
     pub fn rows(&self) -> &Vec<Row> {
         &self.rows
     }
@@ -70,6 +89,14 @@ impl TextBuffer {
 
     pub fn num_rows_mut(&mut self) -> &mut usize {
         &mut self.num_rows
+    }
+
+    pub fn file_name(&self) -> &str {
+        &self.file_name
+    }
+
+    pub fn file_name_mut(&mut self) -> &mut String {
+        &mut self.file_name
     }
 
     pub fn is_dirty(&self) -> bool {

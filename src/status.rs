@@ -1,32 +1,32 @@
 use std::time::Instant;
 
+/** A struct containing the important parts of the status portion of the screen: the status bar and the status message.
+
+When rendering, based on how long the content and the size of the screen, some elements may be hidden
+ */
 #[derive(Debug)]
 pub struct Status {
-    bar: StatusBar,
     msg: String,
     timestamp: Instant
 }
 
 impl Status {
-    /// Creates status bar with no file or text
+    /// Creates status with no file or text
     pub fn new() -> Self {
         Self {
-            bar: StatusBar {},
             msg: String::new(),
             timestamp: Instant::now()
         }
-    }
-
-    pub fn status_bar(&self) -> &StatusBar {
-        &self.bar
     }
 
     pub fn msg(&self) -> &str {
         &self.msg
     }
 
-    pub fn set_msg(&mut self, msg: String) {
+    pub fn set_msg(&mut self, msg: String, max_len: usize) {
         self.msg = msg;
+        self.msg.truncate(max_len);
+        self.timestamp = Instant::now();
     }
 
     pub fn timestamp(&self) -> Instant {
@@ -36,9 +36,4 @@ impl Status {
     pub fn set_timestamp(&mut self, timestamp: Instant) {
         self.timestamp = timestamp;
     }
-}
-
-#[derive(Debug)]
-pub struct StatusBar {
-
 }

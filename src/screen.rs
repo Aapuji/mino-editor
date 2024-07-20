@@ -1,6 +1,6 @@
-use std::io::{self, Write};
+use std::{fmt::format, fs::File, io::{self, Write}};
 
-use crossterm::{cursor::{Hide, MoveTo, Show}, event::{KeyCode, KeyEvent, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, ExecutableCommand, QueueableCommand};
+use crossterm::{cursor::{Hide, MoveTo, Show}, event::{Event, KeyCode, KeyEvent, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, ExecutableCommand, QueueableCommand};
 
 use crate::MINO_VER;
 use crate::cleanup::CleanUp;
@@ -95,6 +95,10 @@ impl Screen {
         self.queue(Hide)?;
         self.queue(MoveTo(0, 0))?;
 
+        self.draw_rows()?;
+        self.draw_status_bar()?;
+        self.draw_msg_bar()?;
+
         self.queue(MoveTo(self.rx.as_u16() - self.col_offset.as_u16(), self.cy.as_u16() - self.row_offset.as_u16()))?;
         self.queue(Show)?;
 
@@ -119,6 +123,50 @@ impl Screen {
         } else if self.rx >= self.col_offset + self.screen_cols {
             self.col_offset = self.rx - self.screen_cols + 1;
         }
+    }
+
+    pub fn draw_status_bar(&mut self) -> error::Result<()> {
+        self.queue(Print("\x1b[7m"))?;
+
+        // File name & number of lines
+
+        let buf = self.editor.get_buf();
+        let name_str = format!("{:.30} - {} lines {}", if buf.file_name().is_empty() {
+            "[No Name]"
+        } else {
+            buf.file_name()
+        }, buf.num_rows(), if buf.is_dirty() {
+            "(modified)"
+        } else {
+            ""
+        });
+
+        let line_str = format!("{}/{}", self.cy + 1, buf.num_rows());
+
+        self.queue(Print(&name_str))?;
+
+        for i in name_str.len()..self.screen_cols {
+            if self.screen_cols - i == name_str.len() {
+                self.queue(Print(name_str))?;
+                break;
+            } else {
+                self.queue(Print(" "))?;
+            }
+        }
+
+        self.queue(Print("\x1b[m\r\n"))?;
+
+        Ok(())
+    }
+
+    pub fn draw_msg_bar(&mut self) -> error::Result<()> {
+        self.queue(Clear(ClearType::CurrentLine))?;
+
+        if self.status.msg().len() > 0 && self.status.timestamp().elapsed() < self.editor.config().msg_bar_life() {
+            self.queue(Print(self.status.msg().to_owned()))?;
+        }
+
+        Ok(())
     }
 
     pub fn draw_rows(&mut self) -> error::Result<()> {
@@ -176,7 +224,6 @@ impl Screen {
                         ..self.col_offset + len
                     );
 
-                // config.stdout.queue(Print(format!("\x1b[38;5;150m{file_row:num_len$}\x1b[m {msg}\r\n")))?;
                 self.queue(Print(format!("{msg}\r\n")))?;
 
             }
@@ -184,6 +231,78 @@ impl Screen {
         }
 
         Ok(())
+    }
+
+    pub fn prompt<F>(&mut self, prompt: &str, f: &F) -> error::Result<Option<String>> 
+    where 
+        F: Fn(&mut Self, String, KeyEvent)
+    {
+        let mut text = String::new();
+        
+        loop {
+            self.status.set_msg(prompt.to_owned() + &text, self.screen_cols);
+            self.refresh()?;
+    
+            let e;
+    
+            match self.editor.read_event()? {
+                Some(Event::Key(ke)) => e = ke,
+                _ => continue                                              
+            }
+    
+            match e {
+                // Submit the text
+                KeyEvent { 
+                    code: KeyCode::Enter, 
+                    modifiers: KeyModifiers::NONE, 
+                    ..
+                } => {
+                    if text.len() != 0 {
+                        self.status.set_msg(String::new(), self.screen_cols);
+                        f(self, text.clone(), e);
+    
+                        return Ok(Some(text));
+                    }
+                }
+    
+                // Escape w/out submitting
+                KeyEvent {
+                    code: KeyCode::Esc,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    self.status.set_msg(String::new(), self.screen_cols);
+                    f(self, text.clone(), e);
+    
+                    return Ok(None);
+                }
+    
+                // Backspace/Delete
+                KeyEvent {
+                    code: KeyCode::Backspace | KeyCode::Delete,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    if !text.is_empty() {
+                        text = text[..(text.len()-1)].to_owned();
+                    }
+                }
+    
+                // Regular Character
+                KeyEvent {
+                    code: KeyCode::Char(ch),
+                    modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                    ..
+                } => {
+                    text.push(ch);
+                }
+    
+                // Anything else
+                _ => ()
+            }
+    
+            f(self, text.clone(), e);
+        }
     }
 
     pub fn move_cursor(&mut self, key: KeyCode) -> error::Result<()> {
@@ -245,7 +364,7 @@ impl Screen {
 
                     let msg = format!("\x1b[31mWARNING!\x1b[m File has unsaved changes. Press CTRL+S to save or CTRL+Q {s} to force quit without saving.");
                     
-                    // set_status_msg(&mut config, msg);
+                    self.status.set_msg(msg, self.screen_cols);
                     *self.editor.quit_times_mut() -= 1;
 
                     return Ok(self);
@@ -261,7 +380,7 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL, 
                 ..
             } => {
-                buf.save()?;
+                self.save()?;
             }
 
             // Find (CTRL+F)
@@ -382,10 +501,49 @@ impl Screen {
         Ok(self)
     }
 
-    /// Does any clean up actions that require the `Screen`. Then drops itself, which triggers `_clean_up.drop`.
-    pub fn clean_up(mut self) {
-        let _ = self.clear();
+    /// Attempst to save current `TextBuffer` to the file. Returns the number of bytes written.
+    pub fn save(&mut self) -> error::Result<usize> {
+        let buf = self.editor.get_buf();
+
+        // Did not enter a file name when opening text editor
+        if buf.file_name().is_empty() {
+            *buf.file_name_mut() = match self.prompt("Save as (ESC to cancel): ", &|_| {})? {
+                Some(val) => val,
+                None => {
+                    self.status.set_msg("Save aborted".to_owned(), self.screen_cols);
+
+                    return Ok(0);
+                }
+            };
+        }
+
+        let text = buf.rows_to_string();
+        let bytes = text.as_bytes();
+        let bytes_wrote = bytes.len();
+
+        File::create(buf.file_name())?.write_all(bytes)?;
+
+        buf.make_clean();
+        self.status.set_msg(format!("{} bytes written to disk", bytes_wrote), self.screen_cols);
+
+        Ok(bytes_wrote)
     }
+
+    pub fn insert_char(&mut self, ch: char) {
+        let buf = self.editor.get_buf();
+        
+        if self.cy == buf.num_rows() {
+            self.editor.append_row_to_current_buf(String::new());
+        }
+
+        let file_col = self.cx + self.col_offset;
+        let config = *self.editor.config();
+        (*self.get_row_mut()).insert_char(file_col, ch, &config);
+
+        self.cx += 1;
+        self.editor.make_dirty();
+    }
+
 
     pub fn get_row(&self) -> &Row {
         &self.editor.get_buf().rows()[self.cy]
@@ -393,5 +551,10 @@ impl Screen {
 
     pub fn get_row_mut(&mut self) -> &mut Row {
         &mut self.editor.get_buf_mut().rows_mut()[self.cy]
+    }
+
+    /// Does any clean up actions that require the `Screen`. Then drops itself, which triggers `_clean_up.drop`.
+    pub fn clean_up(mut self) {
+        let _ = self.clear();
     }
 }

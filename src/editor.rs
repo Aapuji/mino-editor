@@ -60,6 +60,13 @@ impl Editor {
         }
     }
 
+    pub fn append_row_to_current_buf(&mut self, string: String) {
+        let config = self.config;
+        (*self.get_buf_mut()).append(string, &config);
+
+        self.make_dirty();
+    }
+
     pub fn get_buf(&self) -> &TextBuffer {
         &self.bufs[self.current_buf]
     }
@@ -94,6 +101,18 @@ impl Editor {
 
     pub fn config_mut(&mut self) -> &mut Config {
         &mut self.config
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.is_dirty
+    }
+
+    pub fn make_dirty(&mut self) {
+        self.is_dirty = true;
+    }
+
+    pub fn make_clean(&mut self) {
+        self.is_dirty = false;
     }
 
     pub fn quit_times(&self) -> u32 {
