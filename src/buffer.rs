@@ -190,6 +190,10 @@ impl Row {
     where 
         R: ops::RangeBounds<usize>
     {
+        if str.is_empty() {
+            return "";
+        }
+
         let start = range.start_bound();
         let end = range.end_bound();
 

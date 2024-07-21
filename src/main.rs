@@ -30,6 +30,9 @@ fn setup() -> CleanUp {
 }
 
 fn main() {
+    // Debugging
+    env::set_var("RUST_BACKTRACE", "1");
+
     let cli = Cli::parse();
 
     let _clean_up = setup();
@@ -44,39 +47,31 @@ fn main() {
 
     let mut screen = screen.unwrap();
 
-    println!("WINSIZE: {:?} SCREENCOLS: {:?}", crossterm::terminal::size(), screen.screen_cols);
-
-    std::thread::sleep(std::time::Duration::from_secs(2));
-
     let _ = screen.init();
     screen.set_status_msg("HELP: CTRL+Q = Quit | CTRL+S = Save | CTRL+F = Find".to_owned());
 
-    // loop {
+    loop {
         screen.refresh().unwrap();
         screen.flush().unwrap();
 
-    //     let ke = loop {
-    //         match screen.editor_mut().read_event().unwrap() {
-    //             Some(Event::Key(ke)) => break ke,
-    //             // Some(Event::Resize(c, r)) => {
-    //             //     self.screen_cols = c;
-    //             //     screen_rows = r - 2;
+        let ke = loop {
+            match screen.editor_mut().read_event().unwrap() {
+                Some(Event::Key(ke)) => break ke,
+                // Some(Event::Resize(c, r)) => {
+                //     self.screen_cols = c;
+                //     screen_rows = r - 2;
 
-    //             //     editor::refresh_screen(&mut config)?;
-    //             // }
-    //             _ => ()
-    //         }
-    //     };
+                //     editor::refresh_screen(&mut config)?;
+                // }
+                _ => ()
+            }
+        };
 
-    //     screen = screen.process_key_event(&ke).unwrap();
-    // }
+        screen = screen.process_key_event(&ke).unwrap();
 
+        dbg![screen];
+        panic!();
+    }
 
-    // let screen = Screen::new();
-
-    // let editor = Editor::open_from(&cli.files()[0]).expect("Error occurred");
-
-    // println!("{:#?}", editor.get_buf().rows().iter().map(|r| r.render()).collect::<Vec<&str>>());
-
-    std::thread::sleep(std::time::Duration::from_secs(5));
+    // std::thread::sleep(std::time::Duration::from_secs(5));
 }

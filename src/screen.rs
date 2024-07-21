@@ -34,7 +34,7 @@ impl Screen {
         
         Self {
             stdout: io::stdout(),
-            screen_rows: rs as usize,
+            screen_rows: rs as usize - 2, // Make room for status bar and status msg area
             screen_cols: cs as usize,
             editor: Editor::new(),
             row_offset: 0,
@@ -106,7 +106,7 @@ impl Screen {
         self.queue(Hide)?;
         self.queue(MoveTo(0, 0))?;
 
-        // self.draw_rows()?;
+        self.draw_rows()?;
         self.draw_status_bar()?;
         self.draw_msg_bar()?;
 
@@ -157,7 +157,7 @@ impl Screen {
         self.queue(Print(&name_str))?;
 
         for i in name_str.len()..self.screen_cols {
-            if self.screen_cols - i == name_str.len() {
+            if self.screen_cols - i == line_str.len() {
                 self.queue(Print(line_str))?;
                 break;
             } else {
@@ -182,6 +182,78 @@ impl Screen {
 
     pub fn set_status_msg(&mut self, msg: String) {
         self.status.set_msg(msg, self.screen_cols)
+    }
+
+    pub fn prompt<F>(&mut self, prompt: &str, f: &F) -> error::Result<Option<String>> 
+    where 
+        F: Fn(&mut Self, String, KeyEvent)
+    {
+        let mut text = String::new();
+        
+        loop {
+            self.set_status_msg(prompt.to_owned() + &text);
+            self.refresh()?;
+    
+            let e;
+    
+            match self.editor.read_event()? {
+                Some(Event::Key(ke)) => e = ke,
+                _ => continue                                              
+            }
+    
+            match e {
+                // Submit the text
+                KeyEvent { 
+                    code: KeyCode::Enter, 
+                    modifiers: KeyModifiers::NONE, 
+                    ..
+                } => {
+                    if text.len() != 0 {
+                        self.set_status_msg(String::new());
+                        f(self, text.clone(), e);
+    
+                        return Ok(Some(text));
+                    }
+                }
+    
+                // Escape w/out submitting
+                KeyEvent {
+                    code: KeyCode::Esc,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    self.set_status_msg(String::new());
+                    f(self, text.clone(), e);
+    
+                    return Ok(None);
+                }
+    
+                // Backspace/Delete
+                KeyEvent {
+                    code: KeyCode::Backspace | KeyCode::Delete,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    if !text.is_empty() {
+                        text = text[..(text.len()-1)].to_owned();
+                    }
+                }
+    
+                // Regular Character
+                KeyEvent {
+                    code: KeyCode::Char(ch),
+                    modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                    ..
+                } => {
+                    text.push(ch);
+                }
+    
+                // Anything else
+                _ => ()
+            }
+    
+            f(self, text.clone(), e);
+        }
     }
 
     pub fn find(&mut self) -> error::Result<()> {
@@ -315,7 +387,7 @@ impl Screen {
 
                 let msg = buf
                     .rows()[file_row as usize]
-                    .chars_at(
+                    .rchars_at(
                         self.col_offset
                         ..self.col_offset + len
                     );
@@ -327,78 +399,6 @@ impl Screen {
         }
 
         Ok(())
-    }
-
-    pub fn prompt<F>(&mut self, prompt: &str, f: &F) -> error::Result<Option<String>> 
-    where 
-        F: Fn(&mut Self, String, KeyEvent)
-    {
-        let mut text = String::new();
-        
-        loop {
-            self.set_status_msg(prompt.to_owned() + &text);
-            self.refresh()?;
-    
-            let e;
-    
-            match self.editor.read_event()? {
-                Some(Event::Key(ke)) => e = ke,
-                _ => continue                                              
-            }
-    
-            match e {
-                // Submit the text
-                KeyEvent { 
-                    code: KeyCode::Enter, 
-                    modifiers: KeyModifiers::NONE, 
-                    ..
-                } => {
-                    if text.len() != 0 {
-                        self.set_status_msg(String::new());
-                        f(self, text.clone(), e);
-    
-                        return Ok(Some(text));
-                    }
-                }
-    
-                // Escape w/out submitting
-                KeyEvent {
-                    code: KeyCode::Esc,
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                } => {
-                    self.set_status_msg(String::new());
-                    f(self, text.clone(), e);
-    
-                    return Ok(None);
-                }
-    
-                // Backspace/Delete
-                KeyEvent {
-                    code: KeyCode::Backspace | KeyCode::Delete,
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                } => {
-                    if !text.is_empty() {
-                        text = text[..(text.len()-1)].to_owned();
-                    }
-                }
-    
-                // Regular Character
-                KeyEvent {
-                    code: KeyCode::Char(ch),
-                    modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
-                    ..
-                } => {
-                    text.push(ch);
-                }
-    
-                // Anything else
-                _ => ()
-            }
-    
-            f(self, text.clone(), e);
-        }
     }
 
     pub fn move_cursor(&mut self, key: KeyCode) -> error::Result<()> {
@@ -420,13 +420,13 @@ impl Screen {
                 self.cy -= 1;
                 self.cx = self.get_row().size()
             },
-            KeyCode::Down   => if self.cy < buf.num_rows() {
+            KeyCode::Down   => if self.cy < buf.num_rows() - 1 {
                 self.cy += 1;
             },
             KeyCode::Right  => if row.is_some() {
-                if self.cx < row.unwrap().size() {
+                if self.cx < row.unwrap().rsize() {
                     self.cx += 1;
-                } else {
+                } else if self.cy < buf.num_rows() - 1 {
                     self.cy += 1;
                     self.cx = 0;
                 }
@@ -488,7 +488,7 @@ impl Screen {
                 self.find()?;
             }
 
-            // Move (wasd/arrows)
+            // Move (arrows)
             KeyEvent {
                 code: KeyCode::Up       |
                     KeyCode::Down       |
@@ -728,6 +728,6 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        self.clean_up();
+        // self.clean_up();
     }
 }
