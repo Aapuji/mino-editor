@@ -25,7 +25,7 @@ impl TextBuffer {
     }
 
     /// Opens the contents of a file and turns it into the `TextBuffer`'s contents.
-    pub fn open(&mut self, path: &str, config: &Config) -> error::Result<()> {
+    pub fn open(&mut self, path: &str, config: Config) -> error::Result<()> {
         self.file_name = path.to_owned();
 
         let text = fs::read_to_string(&self.file_name).map_err(Error::from)?;
@@ -47,8 +47,34 @@ impl TextBuffer {
     //     }
     // }
 
+    pub fn row_at(&self, idx: usize) -> &Row {
+        if idx >= self.num_rows {
+            &self.rows[self.num_rows - 1]
+        } else {
+            &self.rows[idx]
+        }
+    }
+
+    pub fn row_at_mut(&mut self, idx: usize) -> &mut Row {
+        if idx >= self.num_rows {
+            &mut self.rows[self.num_rows - 1]
+        } else {
+            &mut self.rows[idx]
+        }
+    }
+
+    pub fn merge_rows(&mut self, dest_i: usize, moving_i: usize, config: Config) {
+        let s = self.rows[moving_i].chars().to_owned();
+        (*self.rows[dest_i].chars_mut()).push_str(&s);
+        (*self.rows[dest_i].size_mut()) += self.rows[moving_i].size();
+    
+        self.rows[dest_i].update(config);
+    
+        self.rows.remove(moving_i);
+    }
+
     /// Appends a new row to the end of the `TextBuffer`, given the characters that compose it.
-    pub fn append(&mut self, chars: String, config: &Config) {
+    pub fn append(&mut self, chars: String, config: Config) {
         let row = Row::from_chars(chars, config);
         
         self.push(row)
@@ -135,7 +161,7 @@ impl Row {
     }
 
     /// Creates a new `Row`, given its contents, and a `Config` struct to determine details.
-    pub fn from_chars(chars: String, config: &Config) -> Self {
+    pub fn from_chars(chars: String, config: Config) -> Self {
         let mut row = Row::new();
         row.chars = chars;
         row.update(config);
@@ -201,7 +227,7 @@ impl Row {
     }
 
     /// Updates the `render` and `rsize` properties to align with the `chars` property.
-    pub fn update(&mut self, config: &Config) {
+    pub fn update(&mut self, config: Config) {
         let mut render = String::new();
 
 
@@ -220,7 +246,7 @@ impl Row {
     }
 
     /// Inserts the given character at the given index in the row.
-    pub fn insert_char(&mut self, mut idx: usize, ch: char, config: &Config) {
+    pub fn insert_char(&mut self, mut idx: usize, ch: char, config: Config) {
         if idx > self.size {
             idx = self.size;
         }
@@ -231,7 +257,7 @@ impl Row {
     }
 
     /// Removes the character at the given index of the row.
-    pub fn remove_char(&mut self, mut idx: usize, config: &Config) {
+    pub fn remove_char(&mut self, mut idx: usize, config: Config) {
         if idx > self.size {
             idx = self.size;
         }
@@ -241,7 +267,34 @@ impl Row {
         self.update(config);
     }
 
-    pub fn cx_to_rx(&self, cx: usize, config: &Config) -> usize {
+    /// Splits the current row and returns the next row created.
+    pub fn split_row(&mut self, idx: usize, config: Config) -> Row {
+        if idx >= self.size {
+            return Row::new();
+        }
+
+        let s = self.chars[idx..].to_owned();
+        let len = s.len();
+
+        let mut next_row = Row {
+            chars: s,
+            render: String::new(),
+            size: len,
+            rsize: 0,
+            is_dirty: true
+        };
+    
+        next_row.update(config);
+    
+        self.chars = self.chars_at(0..idx).to_owned();
+        self.size = self.chars.len();
+    
+        self.update(config);
+    
+        next_row
+    }
+
+    pub fn cx_to_rx(&self, cx: usize, config: Config) -> usize {
         let mut rx = 0;
 
         for (i, ch) in self.chars.char_indices() {
@@ -259,7 +312,7 @@ impl Row {
         rx
     }
 
-    pub fn rx_to_cx(&self, rx: usize, config: &Config) -> usize {
+    pub fn rx_to_cx(&self, rx: usize, config: Config) -> usize {
         let mut cur_rx = 0;
     
         let mut cx = 0;
@@ -300,7 +353,7 @@ impl Row {
         &self.chars
     }
 
-    pub fn chars_mut(&mut self) -> &mut str {
+    pub fn chars_mut(&mut self) -> &mut String {
         &mut self.chars
     }
 

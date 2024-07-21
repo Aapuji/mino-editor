@@ -1,3 +1,5 @@
+use std::ops;
+
 use crossterm::{
     self, 
     event::{self, Event, KeyEvent, KeyEventKind}
@@ -12,8 +14,9 @@ pub struct Editor {
     bufs: Vec<TextBuffer>,
     current_buf: usize,
     config: Config,
-    is_dirty: bool,
-    quit_times: u32
+    quit_times: u32,
+    last_match: LastMatch,
+    is_search_forward: bool,
 }
 
 impl Editor {
@@ -22,15 +25,16 @@ impl Editor {
             bufs: vec![TextBuffer::new()],
             current_buf: 0,
             config: Config::new(),
-            is_dirty: false,
-            quit_times: 0
+            quit_times: 0,
+            last_match: LastMatch::MinusOne,
+            is_search_forward: true
         }
     }
 
     pub fn open_from(path: &str) -> error::Result<Self> {
         let mut editor = Self::new();
-        let config = *editor.config();
-        editor.get_buf_mut().open(path, &config)?;
+        let config = editor.config();
+        editor.get_buf_mut().open(path, config)?;
 
         Ok(editor)
     }
@@ -62,9 +66,9 @@ impl Editor {
 
     pub fn append_row_to_current_buf(&mut self, string: String) {
         let config = self.config;
-        (*self.get_buf_mut()).append(string, &config);
+        (*self.get_buf_mut()).append(string, config);
 
-        self.make_dirty();
+        self.get_buf_mut().make_dirty();
     }
 
     pub fn get_buf(&self) -> &TextBuffer {
@@ -95,24 +99,12 @@ impl Editor {
         &mut self.current_buf
     }
 
-    pub fn config(&self) -> &Config {
-        &self.config
+    pub fn config(&self) -> Config {
+        self.config
     }
 
     pub fn config_mut(&mut self) -> &mut Config {
         &mut self.config
-    }
-
-    pub fn is_dirty(&self) -> bool {
-        self.is_dirty
-    }
-
-    pub fn make_dirty(&mut self) {
-        self.is_dirty = true;
-    }
-
-    pub fn make_clean(&mut self) {
-        self.is_dirty = false;
     }
 
     pub fn quit_times(&self) -> u32 {
@@ -121,5 +113,56 @@ impl Editor {
 
     pub fn quit_times_mut(&mut self) -> &mut u32 {
         &mut self.quit_times
-    } 
+    }
+
+    pub fn last_match(&self) -> LastMatch {
+        self.last_match
+    }
+
+    pub fn last_match_mut(&mut self) -> &mut LastMatch {
+        &mut self.last_match
+    }
+
+    pub fn is_search_forward(&self) -> bool {
+        self.is_search_forward
+    }
+
+    pub fn search_forwards(&mut self) {
+        self.is_search_forward = true;
+    }
+
+    pub fn search_backwards(&mut self) {
+        self.is_search_forward = false;
+    }
+
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LastMatch {
+    MinusOne,
+    RowIndex(usize)
+}
+
+impl ops::AddAssign<Self> for LastMatch {
+    fn add_assign(&mut self, rhs: Self) {
+        match (self, rhs) {
+            (Self::MinusOne, Self::MinusOne) => Self::MinusOne,
+            (Self::MinusOne, Self::RowIndex(0)) => Self::MinusOne,
+            (Self::MinusOne, Self::RowIndex(i)) => Self::RowIndex(i - 1),
+            (Self::RowIndex(0), Self::MinusOne) => Self::MinusOne,
+            (Self::RowIndex(i), Self::MinusOne) => Self::RowIndex(*i - 1),
+            (Self::RowIndex(i1), Self::RowIndex(i2)) => Self::RowIndex(*i1 + i2)
+
+        };
+    }
+}
+
+impl From<LastMatch> for usize {
+    fn from(value: LastMatch) -> Self {
+        if let LastMatch::RowIndex(i) = value {
+            i
+        } else {
+            0
+        }
+    }
 }

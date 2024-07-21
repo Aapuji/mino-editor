@@ -3,18 +3,19 @@ use std::{fmt::format, fs::File, io::{self, Write}};
 use crossterm::{cursor::{Hide, MoveTo, Show}, event::{Event, KeyCode, KeyEvent, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, ExecutableCommand, QueueableCommand};
 
 use crate::MINO_VER;
+use crate::config::Config;
 use crate::cleanup::CleanUp;
 use crate::buffer::Row;
-use crate::editor::Editor;
+use crate::editor::{Editor, LastMatch};
 use crate::error::{self, Error};
 use crate::status::Status;
 use crate::util::AsU16;
 
 #[derive(Debug)]
 pub struct Screen {
-    stdout: io::Stdout,
-    screen_rows: usize,
-    screen_cols: usize,
+    pub stdout: io::Stdout,
+    pub screen_rows: usize,
+    pub screen_cols: usize,
     editor: Editor,
     row_offset: usize,
     col_offset: usize,
@@ -29,7 +30,7 @@ impl Screen {
     const ERASE_TERM: &'static str = "\x1bc";
 
     pub fn new() -> Self {
-        let (rs, cs) = terminal::size().expect("An error occurred");
+        let (cs, rs) = terminal::size().expect("An error occurred");
         
         Self {
             stdout: io::stdout(),
@@ -44,6 +45,16 @@ impl Screen {
             status: Status::new(),
             _clean_up: CleanUp
         }
+    }
+
+    pub fn open(file_names: &Vec<String>) -> error::Result<Self> {
+        let mut screen = Self::new();
+        
+        if !file_names.is_empty() {
+            screen.editor = Editor::open_from(&file_names[0])?;
+        }
+
+        Ok(screen)
     }
 
     /// Queues a command to the main buffer screen (ie. stdout; not the status area).
@@ -95,7 +106,7 @@ impl Screen {
         self.queue(Hide)?;
         self.queue(MoveTo(0, 0))?;
 
-        self.draw_rows()?;
+        // self.draw_rows()?;
         self.draw_status_bar()?;
         self.draw_msg_bar()?;
 
@@ -147,7 +158,7 @@ impl Screen {
 
         for i in name_str.len()..self.screen_cols {
             if self.screen_cols - i == name_str.len() {
-                self.queue(Print(name_str))?;
+                self.queue(Print(line_str))?;
                 break;
             } else {
                 self.queue(Print(" "))?;
@@ -167,6 +178,91 @@ impl Screen {
         }
 
         Ok(())
+    }
+
+    pub fn set_status_msg(&mut self, msg: String) {
+        self.status.set_msg(msg, self.screen_cols)
+    }
+
+    pub fn find(&mut self) -> error::Result<()> {
+        let saved_cx = self.cx;
+        let saved_cy = self.cy;
+        let saved_coloff = self.col_offset;
+        let saved_rowoff = self.row_offset;
+        
+        if let None = self.prompt( 
+            "Search (Use ESC/Arrows/Enter): ", 
+            &Self::incremental_search
+        )? {
+            self.cx = saved_cx;
+            self.cy = saved_cy;
+            self.col_offset = saved_coloff;
+            self.row_offset = saved_rowoff;
+        }
+    
+        Ok(())
+    }
+    
+    fn incremental_search(&mut self, query: String, ke: KeyEvent) {
+        let editor = &mut self.editor;
+        
+        match ke {
+            KeyEvent { 
+                code: KeyCode::Esc | KeyCode::Enter, 
+                modifiers: KeyModifiers::NONE, 
+                .. 
+            } => {
+                (*editor.last_match_mut()) = LastMatch::MinusOne;
+                editor.search_forwards();
+                return;
+            }
+
+            KeyEvent { 
+                code: KeyCode::Right | KeyCode::Down, 
+                modifiers: KeyModifiers::NONE, 
+                .. 
+            } => editor.search_forwards(),
+
+            KeyEvent { 
+                code: KeyCode::Left | KeyCode::Up, 
+                modifiers: KeyModifiers::NONE, 
+                .. 
+            } => editor.search_backwards(),
+
+            _ => {
+                (*editor.last_match_mut()) = LastMatch::MinusOne;
+                editor.search_forwards();
+            }
+        }
+
+        if let LastMatch::MinusOne = editor.last_match() {
+            editor.search_forwards();
+        }
+
+        let mut current = editor.last_match();
+        for i in 0..editor.get_buf().num_rows() {
+            current += if editor.is_search_forward() { LastMatch::RowIndex(1) } else { LastMatch::MinusOne };
+            if let LastMatch::MinusOne = current {
+                current = LastMatch::RowIndex(editor.get_buf().num_rows() - 1);
+            } else if let LastMatch::RowIndex(idx) = current {
+                if idx == editor.get_buf().num_rows() {
+                    current = LastMatch::RowIndex(0);
+                }
+            }
+
+            let config = editor.config();
+            let buf = editor.get_buf_mut();
+            let row = buf.row_at_mut(i);
+
+            let found_idx = row.render().find(&query);
+            if found_idx.is_some() {
+                self.cy = usize::from(current);
+                self.cx = row.rx_to_cx(found_idx.unwrap(), config);
+                self.row_offset = buf.num_rows();
+                (*editor.last_match_mut()) = current;
+                break;
+            }
+        }
     }
 
     pub fn draw_rows(&mut self) -> error::Result<()> {
@@ -240,7 +336,7 @@ impl Screen {
         let mut text = String::new();
         
         loop {
-            self.status.set_msg(prompt.to_owned() + &text, self.screen_cols);
+            self.set_status_msg(prompt.to_owned() + &text);
             self.refresh()?;
     
             let e;
@@ -258,7 +354,7 @@ impl Screen {
                     ..
                 } => {
                     if text.len() != 0 {
-                        self.status.set_msg(String::new(), self.screen_cols);
+                        self.set_status_msg(String::new());
                         f(self, text.clone(), e);
     
                         return Ok(Some(text));
@@ -271,7 +367,7 @@ impl Screen {
                     modifiers: KeyModifiers::NONE,
                     ..
                 } => {
-                    self.status.set_msg(String::new(), self.screen_cols);
+                    self.set_status_msg(String::new());
                     f(self, text.clone(), e);
     
                     return Ok(None);
@@ -308,7 +404,7 @@ impl Screen {
     pub fn move_cursor(&mut self, key: KeyCode) -> error::Result<()> {
         let buf = self.editor.get_buf();
 
-        let mut row = if self.cy >= buf.num_rows() {
+        let row = if self.cy >= buf.num_rows() {
             None
         } else {
             Some(self.get_row())
@@ -344,9 +440,9 @@ impl Screen {
     /// Processes the given `&KeyEvent`.
     /// 
     /// Takes ownership of `self`, but returns it back out if it didn't exit the program.
-    pub fn process_key_event(self, key: &KeyEvent, _clean_up: CleanUp) -> error::Result<Self> {
-        let buf = self.editor.get_buf_mut();
+    pub fn process_key_event(mut self, key: &KeyEvent) -> error::Result<Self> {
         let config = self.editor.config();
+        // let buf = self.editor.get_buf_mut();
         
         match *key {
             // Quit (CTRL+Q)
@@ -355,7 +451,7 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if buf.is_dirty() && self.editor.quit_times() > 0 {
+                if self.editor.get_buf_mut().is_dirty() && self.editor.quit_times() > 0 {
                     let s = if config.quit_times() == 1 {
                         "again".to_owned()
                     } else {
@@ -364,12 +460,12 @@ impl Screen {
 
                     let msg = format!("\x1b[31mWARNING!\x1b[m File has unsaved changes. Press CTRL+S to save or CTRL+Q {s} to force quit without saving.");
                     
-                    self.status.set_msg(msg, self.screen_cols);
+                    self.set_status_msg(msg);
                     *self.editor.quit_times_mut() -= 1;
 
                     return Ok(self);
                 } else {
-                    self.clean_up();
+                    drop(self);
                     std::process::exit(0);
                 }
             }
@@ -394,9 +490,9 @@ impl Screen {
 
             // Move (wasd/arrows)
             KeyEvent {
-                code: KeyCode::Up        |
-                    KeyCode::Down      |
-                    KeyCode::Left      |
+                code: KeyCode::Up       |
+                    KeyCode::Down       |
+                    KeyCode::Left       |
                     KeyCode::Right,
                 modifiers: KeyModifiers::NONE,
                 ..
@@ -433,7 +529,7 @@ impl Screen {
             } => {
                 if code == KeyCode::Home {
                     self.cx = 0;
-                } else if self.cy < buf.num_rows() {
+                } else if self.cy < self.editor.get_buf_mut().num_rows() {
                     self.cx = self.get_row().size();
                 }
             }
@@ -444,9 +540,12 @@ impl Screen {
                 modifiers: KeyModifiers::NONE, 
                 .. 
             } => {
-                if self.cy < buf.num_rows() {
+                let num_rows = self.editor.get_buf_mut().num_rows();
+                if self.cy < num_rows {
                     self.split_row();
-                } if self.cy == buf.num_rows() {
+                } if self.cy == num_rows {
+                    let buf = self.editor.get_buf_mut();
+
                     buf.append_row(Row::new());
                     *buf.num_rows_mut() += 1;
                 }
@@ -459,18 +558,18 @@ impl Screen {
                 ..
             } => {
                 if code == KeyCode::Backspace {
-                    if self.cy< buf.num_rows() {
+                    if self.cy< self.editor.get_buf_mut().num_rows() {
                         if self.cx > 0 {
                             self.remove_char(0);
-                        } else if config.cy > 0 {
+                        } else if self.cy > 0 {
                             self.merge_prev_row();
                         }
                     }
                 } else {
-                    if self.cy < buf.num_rows() {
-                        if self.cx < self.get_row().size() as u16 {
+                    if self.cy < self.editor.get_buf_mut().num_rows() {
+                        if self.cx < self.get_row().size() {
                             self.remove_char(1);
-                        } else if self.cy < buf.num_rows() - 1 {
+                        } else if self.cy < self.editor.get_buf_mut().num_rows() - 1 {
                             self.merge_next_row();
                         }
                     }
@@ -503,19 +602,19 @@ impl Screen {
 
     /// Attempst to save current `TextBuffer` to the file. Returns the number of bytes written.
     pub fn save(&mut self) -> error::Result<usize> {
-        let buf = self.editor.get_buf();
-
         // Did not enter a file name when opening text editor
-        if buf.file_name().is_empty() {
-            *buf.file_name_mut() = match self.prompt("Save as (ESC to cancel): ", &|_| {})? {
+        if self.editor.get_buf().file_name().is_empty() {
+            *self.editor.get_buf_mut().file_name_mut() = match self.prompt("Save as (ESC to cancel): ", &|_, _, _| {})? {
                 Some(val) => val,
                 None => {
-                    self.status.set_msg("Save aborted".to_owned(), self.screen_cols);
+                    self.set_status_msg("Save aborted".to_owned());
 
                     return Ok(0);
                 }
             };
         }
+
+        let buf = self.editor.get_buf_mut();
 
         let text = buf.rows_to_string();
         let bytes = text.as_bytes();
@@ -524,7 +623,7 @@ impl Screen {
         File::create(buf.file_name())?.write_all(bytes)?;
 
         buf.make_clean();
-        self.status.set_msg(format!("{} bytes written to disk", bytes_wrote), self.screen_cols);
+        self.set_status_msg(format!("{} bytes written to disk", bytes_wrote));
 
         Ok(bytes_wrote)
     }
@@ -537,13 +636,77 @@ impl Screen {
         }
 
         let file_col = self.cx + self.col_offset;
-        let config = *self.editor.config();
-        (*self.get_row_mut()).insert_char(file_col, ch, &config);
+        let config = self.editor.config();
+        (*self.get_row_mut()).insert_char(file_col, ch, config);
 
         self.cx += 1;
-        self.editor.make_dirty();
+        self.editor.get_buf_mut().make_dirty();
     }
 
+    /// Removes character at `self.cx + offset - 1`.
+    /// 
+    /// `offset = 0` for backspace, `offset = 1` for delete.
+    pub fn remove_char(&mut self, offset: usize) {
+        let cx = self.cx + offset;
+        let config = self.editor.config();
+        (*self.get_row_mut()).remove_char(cx - 1, config);
+
+        self.cx -= 1;
+        self.editor.get_buf_mut().make_dirty();
+    }
+
+    pub fn split_row(&mut self) {
+        let cx = self.cx;
+        let col_offset = self.col_offset;
+
+        let config = self.editor.config();    
+        let row = (*self.get_row_mut()).split_row(cx + col_offset, config);
+        let buf = self.editor.get_buf_mut();
+        (*buf.rows_mut()).insert(self.cy + 1, row);
+    
+        self.cx = 0;
+        self.cy += 1;
+        (*buf.num_rows_mut()) += 1;
+        buf.make_dirty();
+    }
+
+    pub fn merge_prev_row(&mut self) {
+        let buf = self.editor.get_buf();
+
+        if self.cy >= buf.num_rows() {
+            return;
+        }
+    
+        self.cy -= 1;
+        let prev_row_len = self.get_row().size();
+        self.cy += 1;
+    
+        let config = self.editor.config();
+        let buf = self.editor.get_buf_mut();
+        let file_row = self.cy;
+        (*buf).merge_rows(file_row - 1, file_row, config);
+    
+        self.cy -= 1;
+        self.cx = prev_row_len;
+        (*buf.num_rows_mut()) -= 1;
+        buf.make_dirty();
+    }
+
+    pub fn merge_next_row(&mut self) {
+        let buf = self.editor.get_buf();
+        
+        if self.cy >= buf.num_rows() {
+            return;
+        }
+    
+        let config = self.editor.config();
+        let buf = self.editor.get_buf_mut();
+        let file_row = self.cy + self.row_offset;
+        (*buf).merge_rows(file_row, file_row + 1, config);
+    
+        (*buf.num_rows_mut()) -= 1;
+        buf.make_dirty();
+    }
 
     pub fn get_row(&self) -> &Row {
         &self.editor.get_buf().rows()[self.cy]
@@ -553,8 +716,18 @@ impl Screen {
         &mut self.editor.get_buf_mut().rows_mut()[self.cy]
     }
 
-    /// Does any clean up actions that require the `Screen`. Then drops itself, which triggers `_clean_up.drop`.
-    pub fn clean_up(mut self) {
+    /// Does any clean up actions that require the `Screen` (eg. clearing the screen). When it gets dropped `_clean_up.drop` will get triggered to complete any clean up action that don't require the screen (eg. disabling raw mode).
+    pub fn clean_up(&mut self) {
         let _ = self.clear();
+    }
+
+    pub fn editor_mut(&mut self) -> &mut Editor {
+        &mut self.editor
+    }
+}
+
+impl Drop for Screen {
+    fn drop(&mut self) {
+        self.clean_up();
     }
 }

@@ -5,6 +5,8 @@ const DEFAULT_QUIT_TIMES: u32           = 1;
 const DEFAULT_MSG_BAR_LIFE: Duration    = Duration::from_secs(5);
 
 /// Holds configuration information that the user can change.
+/// 
+/// Implements `Copy`.
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
     tab_stop: usize,
