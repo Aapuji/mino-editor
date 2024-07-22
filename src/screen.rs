@@ -152,7 +152,7 @@ impl Screen {
             ""
         });
 
-        let line_str = format!("{}/{}", self.rx - self.cx + 1, buf.num_rows());
+        let line_str = format!("{}/{}", self.cy + 1, buf.num_rows());
 
         self.queue(Print(&name_str))?;
 
