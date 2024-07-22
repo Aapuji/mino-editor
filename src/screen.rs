@@ -311,31 +311,34 @@ impl Screen {
 
         let mut current_line = if let LastMatch::MinusOne = editor.last_match() {
             editor.search_forwards();
-            LastMatch::MinusOne
+            -1
         } else {
-            editor.last_match()
+            usize::from(editor.last_match()) as isize
         };
 
-        for _ in 0..editor.get_buf().num_rows() {
-            current_line += if editor.is_search_forward() { LastMatch::RowIndex(1) } else { LastMatch::MinusOne };
-            if let LastMatch::MinusOne = current_line {
-                current_line = LastMatch::RowIndex(editor.get_buf().num_rows() - 1);
-            } else if let LastMatch::RowIndex(idx) = current_line {
-                if idx == editor.get_buf().num_rows() {
-                    current_line = LastMatch::RowIndex(0);
-                }
+        // This may be a bit not good, so perhaps later clean it up. But it works! I think
+
+        for _ in editor.get_buf().rows() {
+            current_line += if editor.is_search_forward() { 1 } else { -1 };
+            if current_line == -1 {
+                current_line = (editor.get_buf().num_rows() - 1) as isize;
+            } else if current_line == editor.get_buf().num_rows() as isize {
+                current_line = 0;
             }
-
-            let config = editor.config();
-            let buf = editor.get_buf_mut();
-            let row = buf.row_at_mut(usize::from(current_line));
-
+    
+            let row = &editor.get_buf().rows()[current_line.abs() as usize];
+    
             let found_at = row.render().find(&query);
-            if found_at.is_some() {
-                self.cy = usize::from(current_line);
-                self.cx = row.rx_to_cx(found_at.unwrap(), config);
-                self.row_offset = buf.num_rows();
-                (*editor.last_match_mut()) = current_line;
+    
+            if let Some(idx) = found_at {
+                (*editor.last_match_mut()) = if current_line == -1 {
+                    LastMatch::MinusOne
+                } else {
+                    LastMatch::RowIndex(current_line as usize)
+                };
+                self.cy = current_line.abs() as usize;
+                self.cx = editor.get_buf().rows()[current_line.abs() as usize].rx_to_cx(idx, editor.config());
+                self.row_offset = editor.get_buf().num_rows();    // For scrolling behavior
                 break;
             }
         }

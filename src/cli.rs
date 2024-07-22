@@ -2,10 +2,11 @@ use clap::{builder::styling::{Effects, Styles}, Parser};
 
 #[derive(Parser)]
 #[command(name = "mino")]
+#[command(author = "Aapuji")]
 #[command(version, about)]
 #[command(styles(Styles::styled().header(Effects::BOLD.into()).usage(Effects::BOLD.into())))]
 pub struct Cli {
-    /// List of files to open
+    /// List of files to open, when none are provided, a new editor will open
     files: Vec<String>,
 
     /// Whether to open in readonly mode

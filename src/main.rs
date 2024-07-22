@@ -8,8 +8,6 @@ mod screen;
 mod status;
 mod util;
 
-// Hello World
-
 use std::env;
 use std::process;
 use crossterm::event::Event;

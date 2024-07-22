@@ -129,7 +129,7 @@ impl TextBuffer {
 }
 
 /// Struct for holding information about a row in a `TextBuffer`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Row {
     size: usize,
     rsize: usize,
@@ -269,6 +269,13 @@ impl Row {
     pub fn split_row(&mut self, idx: usize, config: Config) -> Row {
         if idx >= self.size {
             return Row::new();
+        }
+
+        if idx == 0 {
+            let row = self.clone();
+            *self = Row::new();
+
+            return row;
         }
 
         let s = self.chars[idx..].to_owned();
