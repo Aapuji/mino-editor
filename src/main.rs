@@ -8,18 +8,17 @@ mod screen;
 mod status;
 mod util;
 
+// ラウ
+
 use std::env;
 use std::process;
 use crossterm::event::Event;
-use crossterm::execute;
 use crossterm::terminal::enable_raw_mode;
 use clap::Parser;
 
 use cleanup::CleanUp;
 use cli::Cli;
-use crossterm::terminal::SetSize;
 use screen::Screen;
-use util::AsU16;
 
 const MINO_VER: &str = env!("CARGO_PKG_VERSION");
 
@@ -69,8 +68,8 @@ fn main() {
 
         screen = screen.process_key_event(&ke).unwrap();
 
-        dbg![screen];
-        panic!();
+        // dbg![screen];
+        // panic!();
     }
 
     // std::thread::sleep(std::time::Duration::from_secs(5));

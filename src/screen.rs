@@ -137,7 +137,7 @@ impl Screen {
     }
 
     pub fn draw_status_bar(&mut self) -> error::Result<()> {
-        self.queue(Print("\x1b[7m"))?;
+        self.queue(Print("\x1b[7m"))?; // Inverts colors
 
         // File name & number of lines
 
@@ -152,7 +152,7 @@ impl Screen {
             ""
         });
 
-        let line_str = format!("{}/{}", self.cy + 1, buf.num_rows());
+        let line_str = format!("{}/{}", self.rx - self.cx + 1, buf.num_rows());
 
         self.queue(Print(&name_str))?;
 
@@ -170,6 +170,10 @@ impl Screen {
         Ok(())
     }
 
+    pub fn set_status_msg(&mut self, msg: String) {
+        self.status.set_msg(msg, self.screen_cols)
+    }
+
     pub fn draw_msg_bar(&mut self) -> error::Result<()> {
         self.queue(Clear(ClearType::CurrentLine))?;
 
@@ -178,10 +182,6 @@ impl Screen {
         }
 
         Ok(())
-    }
-
-    pub fn set_status_msg(&mut self, msg: String) {
-        self.status.set_msg(msg, self.screen_cols)
     }
 
     pub fn prompt<F>(&mut self, prompt: &str, f: &F) -> error::Result<Option<String>> 
@@ -198,7 +198,7 @@ impl Screen {
     
             match self.editor.read_event()? {
                 Some(Event::Key(ke)) => e = ke,
-                _ => continue                                              
+                _ => continue
             }
     
             match e {
@@ -235,7 +235,7 @@ impl Screen {
                     ..
                 } => {
                     if !text.is_empty() {
-                        text = text[..(text.len()-1)].to_owned();
+                        text = text[..(text.chars().count()-1)].to_owned();
                     }
                 }
     
@@ -264,7 +264,7 @@ impl Screen {
         
         if let None = self.prompt( 
             "Search (Use ESC/Arrows/Enter): ", 
-            &Self::incremental_search
+            &|a, b, c| Self::incremental_search(a, b, c)
         )? {
             self.cx = saved_cx;
             self.cy = saved_cy;
@@ -289,12 +289,14 @@ impl Screen {
                 return;
             }
 
+            // Move to next item
             KeyEvent { 
                 code: KeyCode::Right | KeyCode::Down, 
                 modifiers: KeyModifiers::NONE, 
                 .. 
             } => editor.search_forwards(),
 
+            // Move to prev item
             KeyEvent { 
                 code: KeyCode::Left | KeyCode::Up, 
                 modifiers: KeyModifiers::NONE, 
@@ -307,31 +309,33 @@ impl Screen {
             }
         }
 
-        if let LastMatch::MinusOne = editor.last_match() {
+        let mut current_line = if let LastMatch::MinusOne = editor.last_match() {
             editor.search_forwards();
-        }
+            LastMatch::MinusOne
+        } else {
+            editor.last_match()
+        };
 
-        let mut current = editor.last_match();
-        for i in 0..editor.get_buf().num_rows() {
-            current += if editor.is_search_forward() { LastMatch::RowIndex(1) } else { LastMatch::MinusOne };
-            if let LastMatch::MinusOne = current {
-                current = LastMatch::RowIndex(editor.get_buf().num_rows() - 1);
-            } else if let LastMatch::RowIndex(idx) = current {
+        for _ in 0..editor.get_buf().num_rows() {
+            current_line += if editor.is_search_forward() { LastMatch::RowIndex(1) } else { LastMatch::MinusOne };
+            if let LastMatch::MinusOne = current_line {
+                current_line = LastMatch::RowIndex(editor.get_buf().num_rows() - 1);
+            } else if let LastMatch::RowIndex(idx) = current_line {
                 if idx == editor.get_buf().num_rows() {
-                    current = LastMatch::RowIndex(0);
+                    current_line = LastMatch::RowIndex(0);
                 }
             }
 
             let config = editor.config();
             let buf = editor.get_buf_mut();
-            let row = buf.row_at_mut(i);
+            let row = buf.row_at_mut(usize::from(current_line));
 
-            let found_idx = row.render().find(&query);
-            if found_idx.is_some() {
-                self.cy = usize::from(current);
-                self.cx = row.rx_to_cx(found_idx.unwrap(), config);
+            let found_at = row.render().find(&query);
+            if found_at.is_some() {
+                self.cy = usize::from(current_line);
+                self.cx = row.rx_to_cx(found_at.unwrap(), config);
                 self.row_offset = buf.num_rows();
-                (*editor.last_match_mut()) = current;
+                (*editor.last_match_mut()) = current_line;
                 break;
             }
         }
@@ -372,6 +376,7 @@ impl Screen {
                 } else {
                     format!("~\r\n")
                 };
+
                 self.queue(Print(str))?;
             } else {
                 let buf = self.editor.get_buf();
@@ -418,13 +423,13 @@ impl Screen {
                 self.cx -= 1;
             } else if self.cy != 0 {
                 self.cy -= 1;
-                self.cx = self.get_row().size()
+                self.cx = self.get_row().size();
             },
             KeyCode::Down   => if self.cy < buf.num_rows() - 1 {
                 self.cy += 1;
             },
             KeyCode::Right  => if row.is_some() {
-                if self.cx < row.unwrap().rsize() {
+                if self.cx < row.unwrap().size() {
                     self.cx += 1;
                 } else if self.cy < buf.num_rows() - 1 {
                     self.cy += 1;
@@ -433,6 +438,23 @@ impl Screen {
             } 
             _               => ()
         };
+
+        // Cursor jump back to end of line when going from longer line to shorter one
+        let row = if self.cy >= buf.num_rows() {
+            None
+        } else {
+            Some(self.get_row())
+        };
+
+        let len = if let Some(r) = row {
+            r.rsize()
+        } else {
+            0
+        };
+
+        if self.cx > len {
+            self.cx = len;
+        }
 
         Ok(())
     }
@@ -541,13 +563,13 @@ impl Screen {
                 .. 
             } => {
                 let num_rows = self.editor.get_buf_mut().num_rows();
+
                 if self.cy < num_rows {
                     self.split_row();
-                } if self.cy == num_rows {
+                } else if self.cy == num_rows {
                     let buf = self.editor.get_buf_mut();
 
                     buf.append_row(Row::new());
-                    *buf.num_rows_mut() += 1;
                 }
             }
 
@@ -558,7 +580,7 @@ impl Screen {
                 ..
             } => {
                 if code == KeyCode::Backspace {
-                    if self.cy< self.editor.get_buf_mut().num_rows() {
+                    if self.cy < self.editor.get_buf_mut().num_rows() {
                         if self.cx > 0 {
                             self.remove_char(0);
                         } else if self.cy > 0 {

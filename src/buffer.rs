@@ -34,18 +34,10 @@ impl TextBuffer {
             .lines()
             .for_each(|l| self.append(l.to_owned(), config));
 
+        self.is_dirty = false;
+
         Ok(())
     }
-
-    /// Attempts to save the contents of the buffer into the file at `file_name`. Returns `Ok` containing the number of bytes written on success and `Err(error::Error)` on failure.
-    // pub fn save(&self, mut file_name: &str) -> usize {
-    //     // Did not enter a file name when opening the text editor
-    //     if file_name.is_empty() {
-    //         file_name = match  {
-
-    //         }
-    //     }
-    // }
 
     pub fn row_at(&self, idx: usize) -> &Row {
         if idx >= self.num_rows {
@@ -63,21 +55,9 @@ impl TextBuffer {
         }
     }
 
-    pub fn merge_rows(&mut self, dest_i: usize, moving_i: usize, config: Config) {
-        let s = self.rows[moving_i].chars().to_owned();
-        (*self.rows[dest_i].chars_mut()).push_str(&s);
-        (*self.rows[dest_i].size_mut()) += self.rows[moving_i].size();
-    
-        self.rows[dest_i].update(config);
-    
-        self.rows.remove(moving_i);
-    }
-
     /// Appends a new row to the end of the `TextBuffer`, given the characters that compose it.
-    pub fn append(&mut self, chars: String, config: Config) {
-        let row = Row::from_chars(chars, config);
-        
-        self.push(row)
+    pub fn append(&mut self, chars: String, config: Config) {        
+        self.push(Row::from_chars(chars, config))
     }
 
     /// Appends a new row to the end of the `TextBuffer`.
@@ -85,7 +65,7 @@ impl TextBuffer {
         self.push(row);
     }
 
-    pub fn push(&mut self, row: Row) {
+    fn push(&mut self, row: Row) {
         self.rows.push(row);
         self.num_rows += 1;
     }
@@ -99,6 +79,16 @@ impl TextBuffer {
         }
     
         s
+    }
+    
+    pub fn merge_rows(&mut self, dest_i: usize, moving_i: usize, config: Config) {
+        let s = self.rows[moving_i].chars().to_owned();
+        (*self.rows[dest_i].chars_mut()).push_str(&s);
+        (*self.rows[dest_i].size_mut()) += self.rows[moving_i].size();
+    
+        self.rows[dest_i].update(config);
+    
+        self.rows.remove(moving_i);
     }
 
     pub fn rows(&self) -> &Vec<Row> {
@@ -145,6 +135,7 @@ pub struct Row {
     rsize: usize,
     chars: String,
     render: String,
+	has_tabs: bool,
     is_dirty: bool
 }
 
@@ -156,6 +147,7 @@ impl Row {
             rsize: 0,
             chars: String::new(),
             render: String::new(),
+			has_tabs: false,
             is_dirty: false
         }
     }
@@ -164,6 +156,7 @@ impl Row {
     pub fn from_chars(chars: String, config: Config) -> Self {
         let mut row = Row::new();
         row.chars = chars;
+        row.size = row.chars.chars().count();
         row.update(config);
 
         row
@@ -234,9 +227,10 @@ impl Row {
     pub fn update(&mut self, config: Config) {
         let mut render = String::new();
 
-
+		self.has_tabs = false;
         for ch in self.chars.chars() {
             if ch == '\t' {
+				self.has_tabs = true;
                 for _ in 0..config.tab_stop() {
                     render.push(' ');
                 }
@@ -246,7 +240,7 @@ impl Row {
         }
 
         self.render = render;
-        self.rsize = self.render.len();
+        self.rsize = self.render.chars().count();
     }
 
     /// Inserts the given character at the given index in the row.
@@ -278,20 +272,21 @@ impl Row {
         }
 
         let s = self.chars[idx..].to_owned();
-        let len = s.len();
+        let len = s.chars().count();
 
         let mut next_row = Row {
             chars: s,
             render: String::new(),
             size: len,
             rsize: 0,
+			has_tabs: false,
             is_dirty: true
         };
     
         next_row.update(config);
     
-        self.chars = self.chars_at(0..idx).to_owned();
-        self.size = self.chars.len();
+        self.chars = self.chars_at(..idx).to_owned();
+        self.size = self.chars.chars().count();
     
         self.update(config);
     
@@ -365,9 +360,13 @@ impl Row {
         &self.render
     }
 
-    pub fn render_mut(&mut self) -> &mut str {
+    pub fn render_mut(&mut self) -> &mut String {
         &mut self.render
     }
+
+	pub fn has_tabs(&self) -> bool {
+		self.has_tabs
+	}
 
     pub fn is_dirty(&self) -> bool {
         self.is_dirty
