@@ -8,7 +8,7 @@ mod screen;
 mod status;
 mod util;
 
-// ラウ
+// Hello World
 
 use std::env;
 use std::process;

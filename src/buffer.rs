@@ -156,7 +156,7 @@ impl Row {
     pub fn from_chars(chars: String, config: Config) -> Self {
         let mut row = Row::new();
         row.chars = chars;
-        row.size = row.chars.chars().count();
+        row.size = row.chars.len();
         row.update(config);
 
         row
@@ -240,7 +240,7 @@ impl Row {
         }
 
         self.render = render;
-        self.rsize = self.render.chars().count();
+        self.rsize = self.render.len();
     }
 
     /// Inserts the given character at the given index in the row.
@@ -272,7 +272,7 @@ impl Row {
         }
 
         let s = self.chars[idx..].to_owned();
-        let len = s.chars().count();
+        let len = s.len();
 
         let mut next_row = Row {
             chars: s,
@@ -286,7 +286,7 @@ impl Row {
         next_row.update(config);
     
         self.chars = self.chars_at(..idx).to_owned();
-        self.size = self.chars.chars().count();
+        self.size = self.chars.len();
     
         self.update(config);
     

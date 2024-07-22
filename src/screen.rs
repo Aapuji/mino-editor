@@ -235,7 +235,7 @@ impl Screen {
                     ..
                 } => {
                     if !text.is_empty() {
-                        text = text[..(text.chars().count()-1)].to_owned();
+                        text = text[..(text.len()-1)].to_owned();
                     }
                 }
     
@@ -750,6 +750,6 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        // self.clean_up();
+        self.clean_up();
     }
 }
