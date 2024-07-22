@@ -1,42 +1,74 @@
+mod buffer;
 mod cleanup;
+mod cli;
+mod config;
 mod editor;
-mod file;
+mod error;
+mod screen;
+mod status;
+mod util;
 
-use std::io::{self, Write};
 use std::env;
-use crossterm::{event, terminal};
+use std::process;
+use crossterm::event::Event;
+use crossterm::terminal::enable_raw_mode;
+use clap::Parser;
 
-fn main() -> io::Result<()> {
-    terminal::enable_raw_mode().expect("Couldn't enable raw mode.");
+use cleanup::CleanUp;
+use cli::Cli;
+use screen::Screen;
 
-    let mut args = env::args().skip(1);
-    let mut config = editor::Config::init();
+const MINO_VER: &str = env!("CARGO_PKG_VERSION");
 
-    editor::init_screen(&mut config)?;
+fn setup() -> CleanUp {
+    enable_raw_mode().expect("An error occurred when trying to setup the program.");
     
-    if let Some(path) = args.next() {
-        file::open(&mut config, &path)?;
+    CleanUp
+}
+
+fn main() {
+    // Debugging
+    env::set_var("RUST_BACKTRACE", "1");
+
+    let cli = Cli::parse();
+
+    let _clean_up = setup();
+
+    let screen = Screen::open(cli.files());
+
+    if let Err(err) = screen {
+        println!("An error occurred: {}.", err);
+
+        process::exit(1);
     }
 
-    editor::set_status_msg(&mut config, "HELP: CTRL+Q = Quit | CTRL+S = Save | CTRL+F = Find".to_owned());
+    let mut screen = screen.unwrap();
+
+    let _ = screen.init();
+    screen.set_status_msg("HELP: CTRL+Q = Quit | CTRL+S = Save | CTRL+F = Find".to_owned());
 
     loop {
-        editor::refresh_screen(&mut config)?;
-        config.stdout.flush()?;
+        screen.refresh().unwrap();
+        screen.flush().unwrap();
 
         let ke = loop {
-            match editor::read()? {
-                Some(event::Event::Key(ke)) => break ke,
-                Some(event::Event::Resize(c, r)) => {
-                    config.screen_cols = c;
-                    config.screen_rows = r - 2;
+            match screen.editor_mut().read_event().unwrap() {
+                Some(Event::Key(ke)) => break ke,
+                // Some(Event::Resize(c, r)) => {
+                //     self.screen_cols = c;
+                //     screen_rows = r - 2;
 
-                    editor::refresh_screen(&mut config)?;
-                }
+                //     editor::refresh_screen(&mut config)?;
+                // }
                 _ => ()
             }
         };
 
-        config = editor::process_key_event(config, &ke)?;
+        screen = screen.process_key_event(&ke).unwrap();
+
+        // dbg![screen];
+        // panic!();
     }
+
+    // std::thread::sleep(std::time::Duration::from_secs(5));
 }
