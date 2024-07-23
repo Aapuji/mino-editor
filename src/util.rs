@@ -13,3 +13,14 @@ impl AsU16 for usize {
         }
     }
 }
+
+/// Trait to easily get length of integer
+pub trait IntLen {
+    fn len(self) -> usize;
+}
+
+impl IntLen for usize {
+    fn len(self) -> usize {
+        self.to_string().len()
+    }
+}

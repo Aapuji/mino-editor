@@ -1,24 +1,33 @@
-use std::{fmt::format, fs::File, io::{self, Write}};
+use std::cmp;
+use std::fs::File;
+use std::io::{self, Write};
 
-use crossterm::{cursor::{Hide, MoveTo, Show}, event::{Event, KeyCode, KeyEvent, KeyModifiers}, style::Print, terminal::{self, Clear, ClearType}, ExecutableCommand, QueueableCommand};
+use crossterm::{
+    cursor::{Hide, MoveTo, Show}, 
+    event::{Event, KeyCode, KeyEvent, KeyModifiers}, 
+    style::Print, 
+    terminal::{self, Clear, ClearType}, 
+    ExecutableCommand, 
+    QueueableCommand
+};
 
 use crate::MINO_VER;
-use crate::config::Config;
 use crate::cleanup::CleanUp;
 use crate::buffer::Row;
 use crate::editor::{Editor, LastMatch};
 use crate::error::{self, Error};
 use crate::status::Status;
-use crate::util::AsU16;
+use crate::util::{AsU16, IntLen};
 
 #[derive(Debug)]
 pub struct Screen {
-    pub stdout: io::Stdout,
-    pub screen_rows: usize,
-    pub screen_cols: usize,
+    stdout: io::Stdout,
+    screen_rows: usize,
+    screen_cols: usize,
     editor: Editor,
     row_offset: usize,
     col_offset: usize,
+    col_start: usize,
     cx: usize,
     cy: usize,
     rx: usize,
@@ -39,6 +48,7 @@ impl Screen {
             editor: Editor::new(),
             row_offset: 0,
             col_offset: 0,
+            col_start: 2,   // Make room for line numbers
             cx: 0,
             cy: 0,
             rx: 0,
@@ -47,11 +57,12 @@ impl Screen {
         }
     }
 
-    pub fn open(file_names: &Vec<String>) -> error::Result<Self> {
+    pub fn open(file_names: Vec<String>) -> error::Result<Self> {
         let mut screen = Self::new();
         
         if !file_names.is_empty() {
-            screen.editor = Editor::open_from(&file_names[0])?;
+            screen.editor = Editor::open_from(&file_names)?;
+            screen.col_start = screen.editor.get_buf().num_rows().len() + 1;
         }
 
         Ok(screen)
@@ -110,10 +121,18 @@ impl Screen {
         self.draw_status_bar()?;
         self.draw_msg_bar()?;
 
-        self.queue(MoveTo(self.rx.as_u16() - self.col_offset.as_u16(), self.cy.as_u16() - self.row_offset.as_u16()))?;
+        self.queue(MoveTo(
+            (self.rx - self.col_offset + self.col_start).as_u16(), 
+            (self.cy - self.row_offset).as_u16()
+        ))?;
         self.queue(Show)?;
 
         Ok(())
+    }
+
+    pub fn set_size(&mut self, cols: usize, rows: usize) {
+        self.screen_cols = cols;
+        self.screen_rows = rows;
     }
 
     pub fn scroll(&mut self) {
@@ -142,15 +161,19 @@ impl Screen {
         // File name & number of lines
 
         let buf = self.editor.get_buf();
-        let name_str = format!("{:.30} - {} lines {}", if buf.file_name().is_empty() {
-            "[No Name]"
-        } else {
-            buf.file_name()
-        }, buf.num_rows(), if buf.is_dirty() {
-            "(modified)"
-        } else {
-            ""
-        });
+        let name_str = format!("{:.30} - {} lines {}",  
+            if buf.file_name().is_empty() {
+                "[No Name]"
+            } else {
+                buf.file_name()
+            }, 
+            buf.num_rows(), 
+            if buf.is_dirty() {
+                "(modified)"
+            } else {
+                ""
+            }
+        );
 
         let line_str = format!("{}/{}", self.cy + 1, buf.num_rows());
 
@@ -382,6 +405,12 @@ impl Screen {
 
                 self.queue(Print(str))?;
             } else {
+                self.queue(Print(format!("{}{:width$}\x1b[m ", if file_row == self.cy {
+                    "\x1b[38;5;252m"
+                } else {
+                    "\x1b[38;5;245m"
+                }, 1 + file_row, width=self.col_start - 1)))?;
+
                 let buf = self.editor.get_buf();
                 let row_size = buf.rows()[file_row].rsize();
 
@@ -428,7 +457,7 @@ impl Screen {
                 self.cy -= 1;
                 self.cx = self.get_row().size();
             },
-            KeyCode::Down   => if self.cy < buf.num_rows() - 1 {
+            KeyCode::Down   => if buf.num_rows() > 0 && self.cy < buf.num_rows() - 1 {
                 self.cy += 1;
             },
             KeyCode::Right  => if row.is_some() {
@@ -467,7 +496,7 @@ impl Screen {
     /// Takes ownership of `self`, but returns it back out if it didn't exit the program.
     pub fn process_key_event(mut self, key: &KeyEvent) -> error::Result<Self> {
         let config = self.editor.config();
-        // let buf = self.editor.get_buf_mut();
+        let num_rows = self.editor.get_buf().num_rows();
         
         match *key {
             // Quit (CTRL+Q)
@@ -476,14 +505,22 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if self.editor.get_buf_mut().is_dirty() && self.editor.quit_times() > 0 {
+                let mut dirty_bufs = vec![];
+
+                for (i, buf) in self.editor.bufs().iter().enumerate() {
+                    if buf.is_dirty() {
+                        dirty_bufs.push(i);
+                    }
+                }
+
+                if !dirty_bufs.is_empty() && self.editor.quit_times() > 0 {
                     let s = if config.quit_times() == 1 {
                         "again".to_owned()
                     } else {
                         format!("{} more times", config.quit_times())
                     };
 
-                    let msg = format!("\x1b[31mWARNING!\x1b[m File has unsaved changes. Press CTRL+S to save or CTRL+Q {s} to force quit without saving.");
+                    let msg = format!("\x1b[31mWARNING!\x1b[m At least one file has unsaved changes. Press CTRL+S to save or CTRL+Q {s} to force quit all files without saving.");
                     
                     self.set_status_msg(msg);
                     *self.editor.quit_times_mut() -= 1;
@@ -534,7 +571,11 @@ impl Screen {
                 if code == KeyCode::PageUp {
                     self.cy = self.row_offset;
                 } else {
-                    self.cy = self.row_offset + self.screen_rows - 1;
+                    self.cy = if num_rows == 0 { 
+                        0 
+                    } else { 
+                        cmp::min(num_rows - 1, self.row_offset + self.screen_rows - 1) 
+                    };
                 }
 
                 for _ in 0..self.screen_rows {
@@ -557,6 +598,15 @@ impl Screen {
                 } else if self.cy < self.editor.get_buf_mut().num_rows() {
                     self.cx = self.get_row().size();
                 }
+            }
+
+            // Ctrl+Tab (go to next buffer)
+            KeyEvent { 
+                code: KeyCode::Tab, 
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.editor.next_buf();
             }
 
             // Enter (make new line)
@@ -601,9 +651,36 @@ impl Screen {
                 }
             }
 
+            // CTRL+SHIFT+/ or CTRL+? (show keybinds)
+            KeyEvent { 
+                code: KeyCode::Char('/'), 
+                modifiers: m, 
+                .. 
+            } if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+                // println!("CTRL+?");
+                // panic!();
+            }
+            
+            KeyEvent {
+                code: KeyCode::Char('?'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                // println!("CTRL+?");
+                // panic!(); 
+            }
+
+            KeyEvent {
+                code: KeyCode::Char('\t'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.insert_char('\t');
+            }
+
             // Any other character with nothing or with Shift (write it)
             KeyEvent { 
-                code: KeyCode::Char(ch), 
+                code: KeyCode::Char(ch),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT, 
                 .. 
             } => {

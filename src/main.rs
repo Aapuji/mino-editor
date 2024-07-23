@@ -26,6 +26,23 @@ fn setup() -> CleanUp {
     CleanUp
 }
 
+fn prepend_prefix<'a>(paths: &'a Vec<String>, prefix: &'a Option<String>) -> Vec<String> {
+    if prefix.is_none() {
+        paths.clone()
+    } else {
+        let prefix = prefix.as_ref().unwrap();
+
+        paths
+            .iter()
+            .map(|p| {
+                let mut path = p.clone();
+                path.insert_str(0, prefix);
+                path
+            })
+            .collect()
+    }
+}
+
 fn main() {
     // Debugging
     env::set_var("RUST_BACKTRACE", "1");
@@ -34,7 +51,7 @@ fn main() {
 
     let _clean_up = setup();
 
-    let screen = Screen::open(cli.files());
+    let screen = Screen::open(prepend_prefix(cli.files(), cli.prefix()));
 
     if let Err(err) = screen {
         println!("An error occurred: {}.", err);
@@ -44,7 +61,7 @@ fn main() {
 
     let mut screen = screen.unwrap();
 
-    let _ = screen.init();
+    let _ = screen.init();  // TODO: Put this stuff in function to handle all errors together
     screen.set_status_msg("HELP: CTRL+Q = Quit | CTRL+S = Save | CTRL+F = Find".to_owned());
 
     loop {
@@ -54,21 +71,15 @@ fn main() {
         let ke = loop {
             match screen.editor_mut().read_event().unwrap() {
                 Some(Event::Key(ke)) => break ke,
-                // Some(Event::Resize(c, r)) => {
-                //     self.screen_cols = c;
-                //     screen_rows = r - 2;
+                Some(Event::Resize(cols, rows)) => {
+                    // screen.set_size(cols as usize, rows as usize);
 
-                //     editor::refresh_screen(&mut config)?;
-                // }
+                    // let _ = screen.refresh(); // TODO: Put this stuff in function to handle all errors together
+                }
                 _ => ()
             }
         };
 
         screen = screen.process_key_event(&ke).unwrap();
-
-        // dbg![screen];
-        // panic!();
     }
-
-    // std::thread::sleep(std::time::Duration::from_secs(5));
 }

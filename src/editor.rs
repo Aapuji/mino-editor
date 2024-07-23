@@ -31,10 +31,22 @@ impl Editor {
         }
     }
 
-    pub fn open_from(path: &str) -> error::Result<Self> {
+    pub fn open_from(paths: &Vec<String>) -> error::Result<Self> {
         let mut editor = Self::new();
         let config = editor.config();
-        editor.get_buf_mut().open(path, config)?;
+        
+        if paths.len() == 1 {
+            editor.get_buf_mut().open(&paths[0], config)?;
+        } else {
+            editor.remove_buf(0);
+
+            for path in paths {
+                let mut buf = TextBuffer::new();
+                buf.open(&path, config)?;
+
+                editor.append_buf(buf);
+            }
+        }
 
         Ok(editor)
     }
@@ -69,6 +81,30 @@ impl Editor {
         (*self.get_buf_mut()).append(string, config);
 
         self.get_buf_mut().make_dirty();
+    }
+
+    pub fn next_buf(&mut self) {
+        if self.bufs.len() == 0 {
+            return;
+        }
+
+        if self.current_buf == self.bufs.len() - 1 {
+            self.current_buf = 0;
+        } else {
+            self.current_buf += 1;
+        }
+    }
+
+    pub fn prev_buf(&mut self) {
+        if self.bufs.len() == 0 {
+            return;
+        }
+
+        if self.current_buf == 0 {
+            self.current_buf = self.bufs.len();
+        } else {
+            self.current_buf -= 1;
+        }
     }
 
     pub fn get_buf(&self) -> &TextBuffer {
