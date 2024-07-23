@@ -158,8 +158,7 @@ impl Screen {
     pub fn draw_status_bar(&mut self) -> error::Result<()> {
         self.queue(Print("\x1b[7m"))?; // Inverts colors
 
-        // File name & number of lines
-
+        // File name & number of lines -- Left Aligned
         let buf = self.editor.get_buf();
         let name_str = format!("{:.30} - {} lines {}",  
             if buf.file_name().is_empty() {
@@ -174,13 +173,29 @@ impl Screen {
                 ""
             }
         );
+        let name_len = name_str.len();
 
+        // Line number -- Right Aligned
         let line_str = format!("{}/{}", self.cy + 1, buf.num_rows());
+        let line_len = line_str.len();
+
+        // Tab number -- Centered
+        let mut tab_str = format!("Tab {}/{}", 1 + self.editor.current_buf(), self.editor.bufs().len());
+        let mut tab_len = tab_str.len();
+        let px = (self.screen_cols - tab_len) / 2;
+        if px <= name_len || px <= line_len {
+            tab_str = String::new();
+            tab_len = 0;
+        }
 
         self.queue(Print(&name_str))?;
 
-        for i in name_str.len()..self.screen_cols {
-            if self.screen_cols - i == line_str.len() {
+        for i in name_len..self.screen_cols {
+            if i == px {
+                self.queue(Print(tab_str.clone()))?;
+            } else if i > px && i - px < tab_len {
+                continue;
+            } else if self.screen_cols - i == line_len {
                 self.queue(Print(line_str))?;
                 break;
             } else {
