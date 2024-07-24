@@ -2,6 +2,7 @@ use std::time::Duration;
 
 const DEFAULT_TAB_STOP: usize           = 4;
 const DEFAULT_QUIT_TIMES: u32           = 1;
+const DEFAULT_CLOSE_TIMES: u32          = 1;
 const DEFAULT_MSG_BAR_LIFE: Duration    = Duration::from_secs(5);
 
 /// Holds configuration information that the user can change.
@@ -11,6 +12,7 @@ const DEFAULT_MSG_BAR_LIFE: Duration    = Duration::from_secs(5);
 pub struct Config {
     tab_stop: usize,
     quit_times: u32,
+    close_times: u32,
     msg_bar_life: Duration
 }
 
@@ -19,6 +21,7 @@ impl Config {
         Self {
             tab_stop: DEFAULT_TAB_STOP,
             quit_times: DEFAULT_QUIT_TIMES,
+            close_times: DEFAULT_CLOSE_TIMES,
             msg_bar_life: DEFAULT_MSG_BAR_LIFE
         }
     }
@@ -29,6 +32,10 @@ impl Config {
 
     pub fn quit_times(&self) -> u32 {
         self.quit_times
+    }
+
+    pub fn close_times(&self) -> u32 {
+        self.close_times
     }
 
     pub fn msg_bar_life(&self) -> Duration {

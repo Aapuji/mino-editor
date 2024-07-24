@@ -62,7 +62,6 @@ fn main() {
     let mut screen = screen.unwrap();
 
     let _ = screen.init();  // TODO: Put this stuff in function to handle all errors together
-    screen.set_status_msg("HELP: CTRL+Q = Quit | CTRL+S = Save | CTRL+F = Find".to_owned());
 
     loop {
         screen.refresh().unwrap();

@@ -15,6 +15,7 @@ pub struct Editor {
     current_buf: usize,
     config: Config,
     quit_times: u32,
+    close_times: u32,
     last_match: LastMatch,
     is_search_forward: bool,
 }
@@ -26,6 +27,7 @@ impl Editor {
             current_buf: 0,
             config: Config::new(),
             quit_times: 0,
+            close_times: 0,
             last_match: LastMatch::MinusOne,
             is_search_forward: true
         }
@@ -121,6 +123,14 @@ impl Editor {
 
     pub fn remove_buf(&mut self, idx: usize) {
         self.bufs.remove(idx);
+
+        if self.bufs.len() > 0 && self.current_buf == self.bufs.len() {
+            self.current_buf -= 1;
+        }
+    }
+
+    pub fn remove_current_buf(&mut self) {
+        self.remove_buf(self.current_buf);
     }
 
     pub fn bufs(&self) -> &Vec<TextBuffer> {
@@ -135,6 +145,14 @@ impl Editor {
         &mut self.current_buf
     }
 
+    pub fn set_current_buf(&mut self, current_buf: usize) {
+        self.current_buf = current_buf;
+    }
+
+    pub fn num_bufs(&self) -> usize {
+        self.bufs.len()
+    }
+
     pub fn config(&self) -> Config {
         self.config
     }
@@ -147,8 +165,24 @@ impl Editor {
         self.quit_times
     }
 
+    pub fn set_quit_times(&mut self, quit_times: u32) {
+        self.quit_times = quit_times;
+    }
+
     pub fn quit_times_mut(&mut self) -> &mut u32 {
         &mut self.quit_times
+    }
+
+    pub fn close_times(&self) -> u32 {
+        self.close_times
+    }
+
+    pub fn set_close_times(&mut self, close_times: u32) {
+        self.close_times = close_times;
+    }
+
+    pub fn close_times_mut(&mut self) -> &mut u32 {
+        &mut self.close_times
     }
 
     pub fn last_match(&self) -> LastMatch {

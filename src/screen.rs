@@ -11,9 +11,11 @@ use crossterm::{
     QueueableCommand
 };
 
+// Hello Jacky!!!!
+
 use crate::MINO_VER;
 use crate::cleanup::CleanUp;
-use crate::buffer::Row;
+use crate::buffer::{Row, TextBuffer};
 use crate::editor::{Editor, LastMatch};
 use crate::error::{self, Error};
 use crate::status::Status;
@@ -62,7 +64,7 @@ impl Screen {
         
         if !file_names.is_empty() {
             screen.editor = Editor::open_from(&file_names)?;
-            screen.col_start = screen.editor.get_buf().num_rows().len() + 1;
+            screen.col_start = screen.calc_col_start();
         }
 
         Ok(screen)
@@ -385,9 +387,21 @@ impl Screen {
     pub fn draw_rows(&mut self) -> error::Result<()> {
         self.queue(Clear(ClearType::CurrentLine))?;
 
+        self.col_start = self.calc_col_start();
+
         let buf = self.editor.get_buf();
         let num_rows = buf.num_rows();
         let y_max = self.screen_rows;
+
+        // For welcome screen
+        // welcome str is 16+MINO_VER.len()
+        let mut welcome = format!("Mino -- version {MINO_VER}");
+        let ver_len = MINO_VER.len();
+        let mut welcome_len = welcome.len();
+        if welcome_len > self.screen_cols {
+            welcome_len = self.screen_cols;
+        }
+        let mut px = (self.screen_cols - welcome_len) / 2;
 
         for y in 0..y_max {
             let file_row = y + self.row_offset;
@@ -395,27 +409,138 @@ impl Screen {
             if file_row >= num_rows {
                 let str = if num_rows == 0 && y == self.screen_rows / 3 {
                     // Display welcome screen
-                    let mut welcome = format!("Mino editor -- version {MINO_VER}");
-                    let mut welcome_len = welcome.len();
-
-                    if welcome_len > self.screen_cols {
-                        welcome_len = self.screen_cols;
-                    }
-
-                    let mut px = (self.screen_cols - welcome_len) / 2;
                     if px != 0 {
-                        self.queue(Print("~"))?;
+                        self.queue(Print("\x1b[38;5;245m~\x1b[m"))?;
                         px -= 1;
                     }
-                    while px != 0 {
+
+                    for _ in 0..px {
                         self.queue(Print(" "))?;
-                        px -= 1;
                     }
 
                     welcome.truncate(welcome_len);
                     format!("{welcome}\r\n")
+                } else if num_rows == 0 && y == self.screen_rows / 3 + 2 && self.screen_rows >= 16 {
+                    // Display New help
+                    px += 1;
+                    if px != 0 {
+                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        px -= 1;
+                    }
+
+                    for _ in 0..px {
+                        self.queue(Print(" "))?;
+                    }
+
+                    let mut msg = format!("New{:>width$}", "Ctrl N", width=16+ver_len-3);
+                    let msg_len = msg.len();
+
+                    msg.truncate(msg_len);
+                    format!("{msg}\x1b[m\r\n")
+                } else if num_rows == 0 && y == self.screen_rows / 3 + 3 && self.screen_rows >= 16 {
+                    // Display Open help
+                    px += 1;
+                    if px != 0 {
+                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        px -= 1;
+                    }
+
+                    for _ in 0..px {
+                        self.queue(Print(" "))?;
+                    }
+
+                    let mut msg = format!("Open{:>width$}", "Ctrl O", width=16+ver_len-4);
+                    let msg_len = msg.len();
+
+                    msg.truncate(msg_len);
+                    format!("{msg}\x1b[m\r\n")
+                } else if num_rows == 0 && y == self.screen_rows / 3 + 4 && self.screen_rows >= 16 {
+                    // Display Find help
+                    px += 1;
+                    if px != 0 {
+                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        px -= 1;
+                    }
+
+                    for _ in 0..px {
+                        self.queue(Print(" "))?;
+                    }
+
+                    let mut msg = format!("Find Text{:>width$}", "Ctrl F", width=16+ver_len-9);
+                    let msg_len = msg.len();
+
+                    msg.truncate(msg_len);
+                    format!("{msg}\x1b[m\r\n")
+                } else if num_rows == 0 && y == self.screen_rows / 3 + 5 && self.screen_rows >= 16 {
+                    // Display Close help
+                    px += 1;
+                    if px != 0 {
+                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        px -= 1;
+                    }
+
+                    for _ in 0..px {
+                        self.queue(Print(" "))?;
+                    }
+
+                    let mut msg = format!("Close Tab{:>width$}", "Ctrl W", width=16+ver_len-9);
+                    let msg_len = msg.len();
+
+                    msg.truncate(msg_len);
+                    format!("{msg}\x1b[m\r\n")
+                } else if num_rows == 0 && y == self.screen_rows / 3 + 6 && self.screen_rows >= 16 {
+                    // Display Save help
+                    px += 1;
+                    if px != 0 {
+                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        px -= 1;
+                    }
+
+                    for _ in 0..px {
+                        self.queue(Print(" "))?;
+                    }
+
+                    let mut msg = format!("Save{:>width$}", "Ctrl S", width=16+ver_len-4);
+                    let msg_len = msg.len();
+
+                    msg.truncate(msg_len);
+                    format!("{msg}\x1b[m\r\n")
+                } else if num_rows == 0 && y == self.screen_rows / 3 + 7 && self.screen_rows >= 16 {
+                    // Display Quit help
+                    px += 1;
+                    if px != 0 {
+                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        px -= 1;
+                    }
+
+                    for _ in 0..px {
+                        self.queue(Print(" "))?;
+                    }
+
+                    let mut msg = format!("Quit{:>width$}", "Ctrl Q", width=16+ver_len-4);
+                    let msg_len: usize = msg.len();
+
+                    msg.truncate(msg_len);
+                    format!("{msg}\x1b[m\r\n")
+                } else if num_rows == 0 && y == self.screen_rows / 3 + 8 && self.screen_rows >= 16 {
+                    // Display Keybind help
+                    px += 1;
+                    if px != 0 {
+                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        px -= 1;
+                    }
+
+                    for _ in 0..px {
+                        self.queue(Print(" "))?;
+                    }
+
+                    let mut msg = format!("Keybinds{:>width$}", "Ctrl ?", width=16+ver_len-8);
+                    let msg_len = msg.len();
+
+                    msg.truncate(msg_len);
+                    format!("{msg}\x1b[m\r\n")
                 } else {
-                    format!("~\r\n")
+                    format!("\x1b[38;5;245m~\x1b[m\r\n")
                 };
 
                 self.queue(Print(str))?;
@@ -431,8 +556,8 @@ impl Screen {
 
                 let len = if row_size <= self.col_offset {
                     0
-                } else if row_size - self.col_offset > self.screen_cols {
-                    self.screen_cols
+                } else if row_size - self.col_offset > self.screen_cols - self.col_start {
+                    self.screen_cols - self.col_start
                 } else {
                     row_size - self.col_offset
                 };
@@ -520,30 +645,94 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                let mut dirty_bufs = vec![];
+                let mut is_dirty = false;
 
-                for (i, buf) in self.editor.bufs().iter().enumerate() {
+                for buf in self.editor.bufs() {
                     if buf.is_dirty() {
-                        dirty_bufs.push(i);
+                        is_dirty = true;
+                        break;
                     }
                 }
 
-                if !dirty_bufs.is_empty() && self.editor.quit_times() > 0 {
-                    let s = if config.quit_times() == 1 {
+                if is_dirty && self.editor.quit_times() > 0 {
+                    let remaining = self.editor.quit_times();
+                    let s = if remaining == 1 {
                         "again".to_owned()
                     } else {
-                        format!("{} more times", config.quit_times())
+                        format!("{} more times", remaining)
                     };
 
                     let msg = format!("\x1b[31mWARNING!\x1b[m At least one file has unsaved changes. Press CTRL+S to save or CTRL+Q {s} to force quit all files without saving.");
                     
                     self.set_status_msg(msg);
-                    *self.editor.quit_times_mut() -= 1;
+                    self.editor.set_quit_times(self.editor.quit_times() - 1);
 
-                    return Ok(self);
+                    return Ok(self);    // Return so that quit_times is not reset
                 } else {
                     drop(self);
                     std::process::exit(0);
+                }
+            }
+
+            // Create New (CTRL+N)
+            KeyEvent { 
+                code: KeyCode::Char('n'), 
+                modifiers: KeyModifiers::CONTROL, 
+                ..
+            } => {
+                self.editor.append_buf(TextBuffer::new());
+                self.editor.set_current_buf(self.editor.bufs().len() - 1)
+            }
+
+            // Open (CTRL+O)
+            KeyEvent { 
+                code: KeyCode::Char('o'), 
+                modifiers: KeyModifiers::CONTROL, 
+                ..
+            } => {
+                let text = self.prompt("Open file (Use ESC/Enter): ", &|_, _, _| { })?;
+                if text.is_some() {
+                    let text = text.unwrap();
+                    let mut buf = TextBuffer::new();
+                    buf.open(&text, self.editor.config())?;
+
+                    self.editor.append_buf(buf);
+                    self.editor.set_current_buf(self.editor.bufs().len() - 1);
+                }
+            }
+
+            // Close Tab (CTRL+W)
+            KeyEvent { 
+                code: KeyCode::Char('w'), 
+                modifiers: KeyModifiers::CONTROL, 
+                ..
+            } => {
+                let buf = self.editor.get_buf();
+
+                if buf.is_dirty() && self.editor.close_times() > 0 {
+                    let remaining = self.editor.close_times();
+                    let s = if remaining == 1 {
+                        "again".to_owned()
+                    } else {
+                        format!("{} more times", remaining)
+                    };
+
+                    let msg = format!("\x1b[31mWARNING!\x1b[m File has unsaved changes. Press CTRL+S to save or CTRL+W {s} to force quit without saving.");
+
+                    self.set_status_msg(msg);
+                    self.editor.set_close_times(self.editor.close_times() - 1);
+
+                    return Ok(self);    // Return so that close_times is not reset
+                } else {
+                    self.editor.remove_current_buf();
+
+                    if self.editor.num_bufs() == 0 {
+                        self.editor.append_buf(TextBuffer::new());
+                        self.cx = 0;
+                        self.cy = 0;
+                    }
+
+                    self.set_status_msg(String::new());
                 }
             }
 
@@ -712,7 +901,8 @@ impl Screen {
             _ => ()
         }
 
-        *self.editor.quit_times_mut() = config.quit_times();
+        self.editor.set_quit_times(config.quit_times());
+        self.editor.set_close_times(config.close_times());
 
         Ok(self)
     }
@@ -831,6 +1021,11 @@ impl Screen {
 
     pub fn get_row_mut(&mut self) -> &mut Row {
         &mut self.editor.get_buf_mut().rows_mut()[self.cy]
+    }
+
+    /// Calculates col_start value
+    pub fn calc_col_start(&mut self) -> usize {
+        self.editor.get_buf().num_rows().len() + 1
     }
 
     /// Does any clean up actions that require the `Screen` (eg. clearing the screen). When it gets dropped `_clean_up.drop` will get triggered to complete any clean up action that don't require the screen (eg. disabling raw mode).
