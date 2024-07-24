@@ -744,6 +744,15 @@ impl Screen {
                 }
             }
 
+            // Rename (CTRL+R)
+            KeyEvent {
+                code: KeyCode::Char('r'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.rename()?;
+            }            
+
             // Save (CTRL+S)
             KeyEvent { 
                 code: KeyCode::Char('s'),
@@ -760,10 +769,8 @@ impl Screen {
                 ..
             } if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
                 match self.prompt("Save as (ESC to cancel): ", &|_, _, _| {})? {
-                    Some(val) => {
-                        // Todo, add CTRL+R for rename, and put this stuff in that function.
-                        fs::rename(self.editor.get_buf().file_name(), &val).map_err(Error::from)?;
-                        *self.editor.get_buf_mut().file_name_mut() = val;
+                    Some(path) => {
+                        self.editor.get_buf_mut().rename(&path)?;
                         self.save()?;
                     },
                     None => {
@@ -888,8 +895,8 @@ impl Screen {
                 modifiers: m, 
                 .. 
             } if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
-                // println!("CTRL+?");
-                // panic!();
+                println!("CTRL+?");
+                panic!();
             }
             
             KeyEvent {
@@ -901,8 +908,9 @@ impl Screen {
                 // panic!(); 
             }
 
+            // Tab (insert tab)
             KeyEvent {
-                code: KeyCode::Char('\t'),
+                code: KeyCode::Tab,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
@@ -934,7 +942,20 @@ impl Screen {
         Ok(self)
     }
 
-    /// Attempst to save current `TextBuffer` to the file. Returns the number of bytes written.
+    /// Renames current buffer. 
+    pub fn rename(&mut self) -> error::Result<()> {
+        let path = self.prompt("Rename (ESC to cancel): ", &|_, _, _| { })?;
+
+        if path.is_some() {
+            let path = path.unwrap();
+
+            self.editor.get_buf_mut().rename(&path)?;
+        }
+
+        Ok(())
+    }
+
+    /// Attempts to save current `TextBuffer` to the file. Returns the number of bytes written.
     pub fn save(&mut self) -> error::Result<usize> {
         // Did not enter a file name when opening text editor
         if self.editor.get_buf().file_name().is_empty() {

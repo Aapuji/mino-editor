@@ -39,6 +39,14 @@ impl TextBuffer {
         Ok(())
     }
 
+    /// Renames the file of the current `TextBuffer`.
+    pub fn rename(&mut self, path: &str) -> error::Result<()> {
+        fs::rename(&self.file_name, path).map_err(Error::from)?;
+        self.file_name = path.to_owned();
+
+        Ok(())
+    }
+
     pub fn row_at(&self, idx: usize) -> &Row {
         if idx >= self.num_rows {
             &self.rows[self.num_rows - 1]
