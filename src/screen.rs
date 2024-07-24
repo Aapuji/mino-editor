@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{cmp, fs};
 use std::fs::File;
 use std::io::{self, Write};
 
@@ -681,7 +681,12 @@ impl Screen {
                 ..
             } => {
                 self.editor.append_buf(TextBuffer::new());
-                self.editor.set_current_buf(self.editor.bufs().len() - 1)
+                self.editor.set_current_buf(self.editor.bufs().len() - 1);
+
+                self.cx = 0;
+                self.cy = 0;
+
+                self.refresh()?;
             }
 
             // Open (CTRL+O)
@@ -698,6 +703,9 @@ impl Screen {
 
                     self.editor.append_buf(buf);
                     self.editor.set_current_buf(self.editor.bufs().len() - 1);
+
+                    self.cx = 0;
+                    self.cy = 0;
                 }
             }
 
@@ -743,6 +751,25 @@ impl Screen {
                 ..
             } => {
                 self.save()?;
+            }
+
+            // Save As (CTRL+SHIFT+S)
+            KeyEvent {
+                code: KeyCode::Char('S'),
+                modifiers: m ,
+                ..
+            } if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+                match self.prompt("Save as (ESC to cancel): ", &|_, _, _| {})? {
+                    Some(val) => {
+                        // Todo, add CTRL+R for rename, and put this stuff in that function.
+                        fs::rename(self.editor.get_buf().file_name(), &val).map_err(Error::from)?;
+                        *self.editor.get_buf_mut().file_name_mut() = val;
+                        self.save()?;
+                    },
+                    None => {
+                        self.set_status_msg("Save aborted".to_owned());
+                    }
+                };
             }
 
             // Find (CTRL+F)
@@ -921,13 +948,19 @@ impl Screen {
             };
         }
 
+        let path = self.editor.get_buf().file_name().to_owned();
+        self.save_file(&path)
+    }
+
+    /// Attempts to save to given file. Returns the number of bytes written.
+    fn save_file(&mut self, path: &str) -> error::Result<usize> {
         let buf = self.editor.get_buf_mut();
 
         let text = buf.rows_to_string();
         let bytes = text.as_bytes();
         let bytes_wrote = bytes.len();
 
-        File::create(buf.file_name())?.write_all(bytes)?;
+        File::create(path)?.write_all(bytes)?;
 
         buf.make_clean();
         self.set_status_msg(format!("{} bytes written to disk", bytes_wrote));
