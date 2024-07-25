@@ -16,69 +16,35 @@ use clap::Parser;
 
 use cleanup::CleanUp;
 use cli::Cli;
+use error::Report;
 use screen::Screen;
 
 const MINO_VER: &str = env!("CARGO_PKG_VERSION");
 
 fn setup() -> CleanUp {
     enable_raw_mode().expect("An error occurred when trying to setup the program.");
-    
+
     CleanUp
-}
-
-fn prepend_prefix<'a>(paths: &'a Vec<String>, prefix: &'a Option<String>) -> Vec<String> {
-    if prefix.is_none() {
-        paths.clone()
-    } else {
-        let prefix = prefix.as_ref().unwrap();
-
-        paths
-            .iter()
-            .map(|p| {
-                let mut path = p.clone();
-                path.insert_str(0, prefix);
-                path
-            })
-            .collect()
-    }
 }
 
 fn main() {
     // Debugging
-    env::set_var("RUST_BACKTRACE", "1");
+    // env::set_var("RUST_BACKTRACE", "1");
 
     let cli = Cli::parse();
 
-    let _clean_up = setup();
+    let _cleanup = setup();
 
-    let screen = Screen::open(prepend_prefix(cli.files(), cli.prefix()));
+    let screen = Screen::open(util::prepend_prefix(cli.files(), cli.prefix()));
 
     if let Err(err) = screen {
-        println!("An error occurred: {}.", err);
-
+        drop(_cleanup);
+        err.noscreen_report();
+        
         process::exit(1);
     }
 
-    let mut screen = screen.unwrap();
+    let screen = screen.unwrap();
 
-    let _ = screen.init();  // TODO: Put this stuff in function to handle all errors together
-
-    loop {
-        screen.refresh().unwrap();
-        screen.flush().unwrap();
-
-        let ke = loop {
-            match screen.editor_mut().read_event().unwrap() {
-                Some(Event::Key(ke)) => break ke,
-                Some(Event::Resize(cols, rows)) => {
-                    // screen.set_size(cols as usize, rows as usize);
-
-                    // let _ = screen.refresh(); // TODO: Put this stuff in function to handle all errors together
-                }
-                _ => ()
-            }
-        };
-
-        screen = screen.process_key_event(&ke).unwrap();
-    }
+    screen.run(_cleanup);
 }

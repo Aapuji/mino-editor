@@ -8,6 +8,7 @@ pub struct CleanUp;
 
 impl Drop for CleanUp {
     fn drop(&mut self) {
+        print!("\x1b[0 q");
         disable_raw_mode().expect("Couldn't disable raw mode.");
     }
 }

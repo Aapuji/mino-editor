@@ -24,3 +24,20 @@ impl IntLen for usize {
         self.to_string().len()
     }
 }
+
+pub fn prepend_prefix<'a>(paths: &'a Vec<String>, prefix: &'a Option<String>) -> Vec<String> {
+    if prefix.is_none() {
+        paths.clone()
+    } else {
+        let prefix = prefix.as_ref().unwrap();
+
+        paths
+            .iter()
+            .map(|p| {
+                let mut path = p.clone();
+                path.insert_str(0, prefix);
+                path
+            })
+            .collect()
+    }
+}

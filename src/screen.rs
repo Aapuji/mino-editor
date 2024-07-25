@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::{cmp, fs};
 use std::fs::File;
 use std::io::{self, Write};
@@ -17,7 +18,7 @@ use crate::MINO_VER;
 use crate::cleanup::CleanUp;
 use crate::buffer::{Row, TextBuffer};
 use crate::editor::{Editor, LastMatch};
-use crate::error::{self, Error};
+use crate::error::{self, Error, Report};
 use crate::status::Status;
 use crate::util::{AsU16, IntLen};
 
@@ -33,8 +34,9 @@ pub struct Screen {
     cx: usize,
     cy: usize,
     rx: usize,
+    in_status_area: bool,
     status: Status,
-    _clean_up: CleanUp
+    _cleanup: CleanUp
 }
 
 impl Screen {
@@ -54,8 +56,9 @@ impl Screen {
             cx: 0,
             cy: 0,
             rx: 0,
+            in_status_area: false,  // If the cursor is in the status area, instead of in buffer
             status: Status::new(),
-            _clean_up: CleanUp
+            _cleanup: CleanUp
         }
     }
 
@@ -68,6 +71,38 @@ impl Screen {
         }
 
         Ok(screen)
+    }
+
+    pub fn run(mut self, _cleanup: CleanUp) {
+        self.init().noscreen_report();
+
+        let main = || loop {
+            self.refresh().report(&mut self).noscreen_report();
+            self.flush().report(&mut self).noscreen_report();
+    
+            let ke = loop {
+                match self.editor_mut().read_event().expect("Some error occurred") {
+                    Some(Event::Key(ke)) => break ke,
+                    Some(Event::Resize(cols, rows)) => {
+                        // screen.set_size(cols as usize, rows as usize);
+    
+                        // let _ = screen.refresh(); // TODO: Put this stuff in function to handle all errors together
+                    }
+                    _ => ()
+                }
+            };
+    
+            self = match self.process_key_event(&ke) {
+                Ok(val) => val,
+                Err(err) => {
+                    drop(_cleanup);
+                    err.noscreen_report();
+                    std::process::exit(1);
+                }
+            };
+        };
+
+        main()
     }
 
     /// Queues a command to the main buffer screen (ie. stdout; not the status area).
@@ -119,14 +154,23 @@ impl Screen {
         self.queue(Hide)?;
         self.queue(MoveTo(0, 0))?;
 
-        self.draw_rows()?;
+        if !self.in_status_area {
+            self.draw_rows()?;
+        }
         self.draw_status_bar()?;
         self.draw_msg_bar()?;
 
-        self.queue(MoveTo(
-            (self.rx - self.col_offset + self.col_start).as_u16(), 
-            (self.cy - self.row_offset).as_u16()
-        ))?;
+        if self.in_status_area {
+            self.execute(Show)?;
+            self.queue(MoveTo(self.status.msg().len().as_u16(), self.screen_rows.as_u16() + 1))?;
+            self.queue(Print("\x1b[1 q"))?;
+        } else {
+            self.queue(MoveTo(
+                (self.rx - self.col_offset + self.col_start).as_u16(), 
+                (self.cy - self.row_offset).as_u16()
+            ))?;
+            self.queue(Print("\x1b[0 q"))?;
+        }
         self.queue(Show)?;
 
         Ok(())
@@ -158,6 +202,12 @@ impl Screen {
     }
 
     pub fn draw_status_bar(&mut self) -> error::Result<()> {
+        if self.in_status_area {
+            for _ in 0..self.screen_rows {
+                self.queue(Print("\r\n"))?;
+            }
+        }
+        
         self.queue(Print("\x1b[7m"))?; // Inverts colors
 
         // File name & number of lines -- Left Aligned
@@ -232,6 +282,7 @@ impl Screen {
         
         loop {
             self.set_status_msg(prompt.to_owned() + &text);
+            self.in_status_area = true;
             self.refresh()?;
     
             let e;
@@ -252,6 +303,7 @@ impl Screen {
                         self.set_status_msg(String::new());
                         f(self, text.clone(), e);
     
+                        self.in_status_area = false;
                         return Ok(Some(text));
                     }
                 }
@@ -265,6 +317,7 @@ impl Screen {
                     self.set_status_msg(String::new());
                     f(self, text.clone(), e);
     
+                    self.in_status_area = false;
                     return Ok(None);
                 }
     
@@ -698,6 +751,17 @@ impl Screen {
                 let text = self.prompt("Open file (Use ESC/Enter): ", &|_, _, _| { })?;
                 if text.is_some() {
                     let text = text.unwrap();
+
+                    if let Err(_) | Ok(false) = Path::new(&text).try_exists() {
+                        let res = self.prompt(&format!("File '{text}' doesn't exist. Would you like to create it (Y/n) "), &|_, _, _| { })?;
+
+                        if let Some(s) = res {
+                            if s.to_lowercase() == "y" {
+                                File::create(&text)?;
+                            }
+                        }
+                    }
+
                     let mut buf = TextBuffer::new();
                     buf.open(&text, self.editor.config())?;
 
@@ -948,6 +1012,16 @@ impl Screen {
 
         if path.is_some() {
             let path = path.unwrap();
+
+            if let Ok(true) = Path::new(&path).try_exists() {
+                let res = self.prompt(&format!("File '{path}' already exist. Would you like to overwrite its contents? (Y/n) "), &|_, _, _| { })?;
+
+                if let Some(s) = res {
+                    if s.to_lowercase() != "y" {
+                        return Ok(());
+                    }
+                }
+            }
 
             self.editor.get_buf_mut().rename(&path)?;
         }
