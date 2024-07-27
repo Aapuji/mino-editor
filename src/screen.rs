@@ -1,8 +1,7 @@
 use std::path::Path;
-use std::{cmp, fs};
+use std::cmp;
 use std::fs::File;
 use std::io::{self, Write};
-
 use crossterm::{
     cursor::{Hide, MoveTo, Show}, 
     event::{Event, KeyCode, KeyEvent, KeyModifiers}, 
@@ -12,13 +11,11 @@ use crossterm::{
     QueueableCommand
 };
 
-// Hello Jacky!!!!
-
 use crate::MINO_VER;
 use crate::cleanup::CleanUp;
 use crate::buffer::{Row, TextBuffer};
 use crate::editor::{Editor, LastMatch};
-use crate::error::{self, Error, Report};
+use crate::error::{self, Error};
 use crate::status::Status;
 use crate::util::{AsU16, IntLen};
 
@@ -73,12 +70,12 @@ impl Screen {
         Ok(screen)
     }
 
-    pub fn run(mut self, _cleanup: CleanUp) {
-        self.init().noscreen_report();
+    pub fn run(mut self) {
+        self.init().expect("An error occurred");
 
         let main = || loop {
-            self.refresh().report(&mut self).noscreen_report();
-            self.flush().report(&mut self).noscreen_report();
+            self.refresh().expect("An error occured");
+            self.flush().expect("An error occurred");
     
             let ke = loop {
                 match self.editor_mut().read_event().expect("Some error occurred") {
@@ -94,9 +91,9 @@ impl Screen {
     
             self = match self.process_key_event(&ke) {
                 Ok(val) => val,
-                Err(err) => {
-                    drop(_cleanup);
-                    err.noscreen_report();
+                err @ Err(_) => {
+                    drop(CleanUp);
+                    err.expect("An error occurred");
                     std::process::exit(1);
                 }
             };

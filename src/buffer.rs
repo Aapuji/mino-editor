@@ -1,9 +1,9 @@
 use std::fs;
 use std::ops;
-use std::path;
 
 use crate::error::{self, Error};
 use crate::config::Config;
+use crate::highlight::FgStyle;
 use crate::highlight::Highlight;
 
 /// Holds the text buffer that will be displayed in the editor.
@@ -253,6 +253,21 @@ impl Row {
 
         self.render = render;
         self.rsize = self.render.len();
+
+        self.update_highlight(config);
+    }
+
+    pub fn update_highlight(&mut self, config: Config) {
+        self.hl = self.render
+            .chars()
+            .map(|ch| {
+                if ch.is_digit(10) {
+                    Highlight::from(FgStyle::Number)
+                } else {
+                    Highlight::default()
+                }
+            })
+            .collect();
     }
 
     /// Inserts the given character at the given index in the row.

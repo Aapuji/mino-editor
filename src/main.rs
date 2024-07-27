@@ -12,13 +12,11 @@ mod util;
 
 use std::env;
 use std::process;
-use crossterm::event::Event;
 use crossterm::terminal::enable_raw_mode;
 use clap::Parser;
 
 use cleanup::CleanUp;
 use cli::Cli;
-use error::Report;
 use screen::Screen;
 
 const MINO_VER: &str = env!("CARGO_PKG_VERSION");
@@ -31,7 +29,7 @@ fn setup() -> CleanUp {
 
 fn main() {
     // Debugging
-    // env::set_var("RUST_BACKTRACE", "1");
+    env::set_var("RUST_BACKTRACE", "1");
 
     let cli = Cli::parse();
 
@@ -39,14 +37,14 @@ fn main() {
 
     let screen = Screen::open(util::prepend_prefix(cli.files(), cli.prefix()));
 
-    if let Err(err) = screen {
+    if let Err(_) = screen {
         drop(_cleanup);
-        err.noscreen_report();
+        eprintln!("An error occurred");
         
         process::exit(1);
     }
 
     let screen = screen.unwrap();
 
-    screen.run(_cleanup);
+    screen.run();
 }
