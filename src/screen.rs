@@ -815,7 +815,16 @@ impl Screen {
                 ..
             } => {
                 self.rename()?;
-            }            
+            }
+
+            // Refresh (CTRL+SHIFT+R)
+            KeyEvent { 
+                code: KeyCode::Char('R'), 
+                modifiers: m, 
+                ..
+            } if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+                self.refresh()?;
+            }
 
             // Save (CTRL+S)
             KeyEvent { 

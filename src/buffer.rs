@@ -4,6 +4,7 @@ use std::path;
 
 use crate::error::{self, Error};
 use crate::config::Config;
+use crate::highlight::Highlight;
 
 /// Holds the text buffer that will be displayed in the editor.
 #[derive(Debug)]
@@ -144,6 +145,7 @@ pub struct Row {
     rsize: usize,
     chars: String,
     render: String,
+    hl: Vec<Highlight>,
 	has_tabs: bool,
     is_dirty: bool
 }
@@ -156,6 +158,7 @@ impl Row {
             rsize: 0,
             chars: String::new(),
             render: String::new(),
+            hl: vec![],
 			has_tabs: false,
             is_dirty: false
         }
@@ -295,6 +298,7 @@ impl Row {
             render: String::new(),
             size: len,
             rsize: 0,
+            hl: vec![],
 			has_tabs: false,
             is_dirty: true
         };
@@ -378,6 +382,14 @@ impl Row {
 
     pub fn render_mut(&mut self) -> &mut String {
         &mut self.render
+    }
+
+    pub fn hl(&self) -> &Vec<Highlight> {
+        &self.hl
+    }
+
+    pub fn hl_mut(&mut self) -> &mut Vec<Highlight> {
+        &mut self.hl
     }
 
 	pub fn has_tabs(&self) -> bool {

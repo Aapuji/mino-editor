@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use supports_color::Stream;
+
 const DEFAULT_TAB_STOP: usize           = 4;
 const DEFAULT_QUIT_TIMES: u32           = 1;
 const DEFAULT_CLOSE_TIMES: u32          = 1;
@@ -13,7 +15,8 @@ pub struct Config {
     tab_stop: usize,
     quit_times: u32,
     close_times: u32,
-    msg_bar_life: Duration
+    msg_bar_life: Duration,
+    color_support: ColorSupport
 }
 
 impl Config {
@@ -22,7 +25,20 @@ impl Config {
             tab_stop: DEFAULT_TAB_STOP,
             quit_times: DEFAULT_QUIT_TIMES,
             close_times: DEFAULT_CLOSE_TIMES,
-            msg_bar_life: DEFAULT_MSG_BAR_LIFE
+            msg_bar_life: DEFAULT_MSG_BAR_LIFE,
+            color_support: if let Some(support) = supports_color::on(Stream::Stdout) {
+                if support.has_16m {
+                    ColorSupport::RGB
+                } else if support.has_256 {
+                    ColorSupport::Bit256
+                } else if support.has_basic {
+                    ColorSupport::Basic
+                } else {
+                    ColorSupport::None
+                }
+            } else {
+                ColorSupport::None
+            }
         }
     }
 
@@ -41,4 +57,16 @@ impl Config {
     pub fn msg_bar_life(&self) -> Duration {
         self.msg_bar_life
     }
+
+    pub fn color_support(&self) -> ColorSupport {
+        self.color_support
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ColorSupport {
+    RGB,
+    Bit256,
+    Basic,
+    None
 }

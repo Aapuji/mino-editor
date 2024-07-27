@@ -10,3 +10,4 @@ description = "A small text editor in the terminal"
 [dependencies]
 clap = { version = "4.5.9", features = ["derive", "color", "help"] }
 crossterm = "0.27.0"
+supports-color = "3.0.0"

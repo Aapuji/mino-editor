@@ -4,6 +4,8 @@ mod cli;
 mod config;
 mod editor;
 mod error;
+mod highlight;
+mod lang;
 mod screen;
 mod status;
 mod util;
