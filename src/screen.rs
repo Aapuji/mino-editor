@@ -11,6 +11,7 @@ use crossterm::{
     QueueableCommand
 };
 
+use crate::highlight::{BgStyle, FgStyle, Highlight};
 use crate::MINO_VER;
 use crate::cleanup::CleanUp;
 use crate::buffer::{Row, TextBuffer};
@@ -151,29 +152,42 @@ impl Screen {
         self.queue(Hide)?;
         self.queue(MoveTo(0, 0))?;
 
-        if !self.in_status_area {
-            self.draw_rows()?;
-        }
+        self.draw_rows()?;
         self.draw_status_bar()?;
         self.draw_msg_bar()?;
 
-        if self.in_status_area {
-            self.execute(Show)?;
-            self.queue(MoveTo(self.status.msg().len().as_u16(), self.screen_rows.as_u16() + 1))?;
-            self.queue(Print("\x1b[1 q"))?;
-        } else {
+        if !self.in_status_area {
             self.queue(MoveTo(
                 (self.rx - self.col_offset + self.col_start).as_u16(), 
                 (self.cy - self.row_offset).as_u16()
             ))?;
-            self.queue(Print("\x1b[0 q"))?;
+        } else {
+            self.queue(MoveTo(self.status.msg().len().as_u16(), self.screen_rows.as_u16() + 1))?;
         }
         self.queue(Show)?;
+
+
+        // if self.in_status_area {
+        //     self.execute(Show)?;
+        //     self.queue(MoveTo(
+        //         (self.rx - self.col_offset + self.col_start).as_u16(), 
+        //         (self.cy - self.row_offset).as_u16()
+        //     ))?;
+        //     // self.queue(MoveTo(self.status.msg().len().as_u16(), self.screen_rows.as_u16() + 1))?;
+        //     self.queue(Print("\x1b[1 q"))?;
+        // } else {
+        //     self.queue(MoveTo(
+        //         (self.rx - self.col_offset + self.col_start).as_u16(), 
+        //         (self.cy - self.row_offset).as_u16()
+        //     ))?;
+        //     self.queue(Print("\x1b[0 q"))?;
+        // }
+        // self.queue(Show)?;
 
         Ok(())
     }
 
-    pub fn set_size(&mut self, cols: usize, rows: usize) {
+    pub fn resize(&mut self, cols: usize, rows: usize) {
         self.screen_cols = cols;
         self.screen_rows = rows;
     }
@@ -199,11 +213,11 @@ impl Screen {
     }
 
     pub fn draw_status_bar(&mut self) -> error::Result<()> {
-        if self.in_status_area {
-            for _ in 0..self.screen_rows {
-                self.queue(Print("\r\n"))?;
-            }
-        }
+        // if self.in_status_area {
+        //     for _ in 0..self.screen_rows {
+        //         self.queue(Print("\r\n"))?;
+        //     }
+        // }
         
         self.queue(Print("\x1b[7m"))?; // Inverts colors
 
@@ -429,6 +443,12 @@ impl Screen {
                 self.cy = current_line.abs() as usize;
                 self.cx = editor.get_buf().rows()[current_line.abs() as usize].rx_to_cx(idx, editor.config());
                 self.row_offset = editor.get_buf().num_rows();    // For scrolling behavior
+
+                // let row = &mut editor.get_buf_mut().rows_mut()[current_line.abs() as usize];
+                // for i in 0..query.len() {
+                //     row.hl_mut()[self.cx + i].set_bg(BgStyle::MatchSearch);
+                // }
+
                 break;
             }
         }
@@ -614,7 +634,7 @@ impl Screen {
 
                 let msg = buf
                     .rows()[file_row as usize]
-                    .rchars_at(
+                    .hlchars_at(
                         self.col_offset
                         ..self.col_offset + len
                     );

@@ -179,7 +179,7 @@ impl Row {
     where 
         R: ops::RangeBounds<usize>
     {
-        Self::index_range(&self.chars, self.size, range)
+        &self.chars[Self::index_range(&self.chars, self.size, range)]
     }
 
     /// Gets the chars at the given `range` of `self.render`. If any values of the range go out of bounds of the row's text, they are not used, so that it will not fail. If the range is entirely out of bounds, then all chars will not be used, returning an empty `&str`.
@@ -187,16 +187,40 @@ impl Row {
     where 
         R: ops::RangeBounds<usize>
     {
-        Self::index_range(&self.render, self.rsize, range)
+        &self.render[Self::index_range(&self.render, self.rsize, range)]
+    }
+
+    pub fn hlchars_at<R>(&self, range: R) -> String
+    where 
+        R: ops::RangeBounds<usize>
+    {
+
+        let mut s = String::new();
+        let mut prev_hl = None;
+        for i in Self::index_range(&self.render, self.rsize, range) {
+            let hl = &self.hl[i];
+            
+            if let None = prev_hl {
+                s += &format!("{}{}", hl, &self.render[i..=i]);
+            } else if prev_hl.unwrap() == hl {
+                s += &format!("{}", &self.render[i..=i]);
+            } else {
+                s += &format!("{}{}", hl, &self.render[i..=i]);
+            }
+
+            prev_hl = Some(hl);
+        }
+
+        s + Highlight::RESET
     }
 
     /// Gets the chars at the given `range` of `str`. If any values of the range go out of bounds of the row's text, they are not used, so that it will not fail. If the range is entirely out of bounds, then all chars will not be used, returning an empty `&str`.
-    fn index_range<R>(str: &str, size: usize, range: R) -> &str 
+    fn index_range<R>(str: &str, size: usize, range: R) -> ops::Range<usize>
     where 
         R: ops::RangeBounds<usize>
     {
         if str.is_empty() {
-            return "";
+            return 0..0;
         }
 
         let start = range.start_bound();
@@ -210,7 +234,7 @@ impl Row {
                 *i
             },
             ops::Bound::Excluded(i) => if *i >= size - 1 {
-                return "";
+                return 0..0;
             } else {
                 *i+1
             }
@@ -219,20 +243,20 @@ impl Row {
         let end_idx = match end {
             ops::Bound::Unbounded => size,
             ops::Bound::Included(i) => if *i >= size {
-                size - 1
+                size
             } else {
-                *i
+                *i+1
             },
             ops::Bound::Excluded(i) => if *i > size {
-                return "";
+                return 0..0;
             } else if *i == 0 {
-                0
+                return 0..0;
             } else {
-                *i-1
+                *i
             }
         };
 
-        &str[start_idx..=end_idx]
+        start_idx..end_idx
     }
 
     /// Updates the `render` and `rsize` properties to align with the `chars` property.
@@ -254,10 +278,10 @@ impl Row {
         self.render = render;
         self.rsize = self.render.len();
 
-        self.update_highlight(config);
+        self.update_highlight();
     }
 
-    pub fn update_highlight(&mut self, config: Config) {
+    pub fn update_highlight(&mut self) {
         self.hl = self.render
             .chars()
             .map(|ch| {
