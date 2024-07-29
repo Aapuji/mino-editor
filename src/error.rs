@@ -1,8 +1,6 @@
 use std::io;
 use std::fmt;
 
-use crate::screen::Screen;
-
 #[derive(Debug)]
 pub enum Error {
     Io(io::ErrorKind)

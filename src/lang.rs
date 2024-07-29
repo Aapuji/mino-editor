@@ -1,11 +1,21 @@
-#[derive(Debug)]
-pub struct Language<const N: usize> {
-    filetype: &'static str,
-    exts: [&'static str; N],
-
+#[derive(Debug, Clone, Copy)]
+pub enum Language {
+    Text,
+    C
 }
 
-const C: Language<3> = Language {
-    filetype: "c",
-    exts: [".c", ".h", ".cpp" ]
-};
+impl Language {
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Text  => "text",
+            Self::C     => "c"
+        }
+    }
+
+    pub const fn ext(&self) -> &'static [&'static str] {
+        match self {
+            Self::Text  => &[],
+            Self::C     => &["c", "h"]
+        }
+    }
+}

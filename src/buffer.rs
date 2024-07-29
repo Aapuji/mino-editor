@@ -3,8 +3,7 @@ use std::ops;
 
 use crate::error::{self, Error};
 use crate::config::Config;
-use crate::highlight::FgStyle;
-use crate::highlight::Highlight;
+use crate::style::{Style, FgStyle};
 
 /// Holds the text buffer that will be displayed in the editor.
 #[derive(Debug)]
@@ -145,7 +144,7 @@ pub struct Row {
     rsize: usize,
     chars: String,
     render: String,
-    hl: Vec<Highlight>,
+    hl: Vec<Style>,
 	has_tabs: bool,
     is_dirty: bool
 }
@@ -211,7 +210,7 @@ impl Row {
             prev_hl = Some(hl);
         }
 
-        s + Highlight::RESET
+        s + Style::RESET
     }
 
     /// Gets the chars at the given `range` of `str`. If any values of the range go out of bounds of the row's text, they are not used, so that it will not fail. If the range is entirely out of bounds, then all chars will not be used, returning an empty `&str`.
@@ -282,16 +281,17 @@ impl Row {
     }
 
     pub fn update_highlight(&mut self) {
-        self.hl = self.render
-            .chars()
-            .map(|ch| {
-                if ch.is_digit(10) {
-                    Highlight::from(FgStyle::Number)
-                } else {
-                    Highlight::default()
-                }
-            })
-            .collect();
+        self.hl = vec![];
+        
+        // Use `chars.next()` to skip next item
+        let mut chars = self.render.chars();
+        while let Some(ch) = chars.next() {
+            if ch.is_digit(10) {
+                self.hl.push(Style::from(FgStyle::Normal));
+            } else {
+                self.hl.push(Style::default());
+            }
+        }
     }
 
     /// Inserts the given character at the given index in the row.
@@ -423,11 +423,11 @@ impl Row {
         &mut self.render
     }
 
-    pub fn hl(&self) -> &Vec<Highlight> {
+    pub fn hl(&self) -> &Vec<Style> {
         &self.hl
     }
 
-    pub fn hl_mut(&mut self) -> &mut Vec<Highlight> {
+    pub fn hl_mut(&mut self) -> &mut Vec<Style> {
         &mut self.hl
     }
 

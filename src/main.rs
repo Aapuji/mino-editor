@@ -8,6 +8,7 @@ mod highlight;
 mod lang;
 mod screen;
 mod status;
+mod style;
 mod util;
 
 use std::env;

@@ -11,7 +11,8 @@ use crossterm::{
     QueueableCommand
 };
 
-use crate::highlight::{BgStyle, FgStyle, Highlight};
+use crate::config::{Config, CursorStyle};
+use crate::style::BgStyle;
 use crate::MINO_VER;
 use crate::cleanup::CleanUp;
 use crate::buffer::{Row, TextBuffer};
@@ -26,6 +27,7 @@ pub struct Screen {
     screen_rows: usize,
     screen_cols: usize,
     editor: Editor,
+    config: Config,
     row_offset: usize,
     col_offset: usize,
     col_start: usize,
@@ -48,6 +50,7 @@ impl Screen {
             screen_rows: rs as usize - 2, // Make room for status bar and status msg area
             screen_cols: cs as usize,
             editor: Editor::new(),
+            config: Config::default(),
             row_offset: 0,
             col_offset: 0,
             col_start: 2,   // Make room for line numbers
@@ -64,7 +67,7 @@ impl Screen {
         let mut screen = Self::new();
         
         if !file_names.is_empty() {
-            screen.editor = Editor::open_from(&file_names)?;
+            screen.editor = Editor::open_from(&file_names, screen.config())?;
             screen.col_start = screen.calc_col_start();
         }
 
@@ -161,28 +164,18 @@ impl Screen {
                 (self.rx - self.col_offset + self.col_start).as_u16(), 
                 (self.cy - self.row_offset).as_u16()
             ))?;
+
+            if let CursorStyle::BigBar = self.config.prompt_bar_cursor_style() {
+                self.queue(Print("\x1b[1 q"))?;
+            }
         } else {
+            if let CursorStyle::BigBar = self.config.prompt_bar_cursor_style() {
+                self.queue(Print("\x1b[0 q"))?;
+            }
             self.queue(MoveTo(self.status.msg().len().as_u16(), self.screen_rows.as_u16() + 1))?;
         }
-        self.queue(Show)?;
 
-
-        // if self.in_status_area {
-        //     self.execute(Show)?;
-        //     self.queue(MoveTo(
-        //         (self.rx - self.col_offset + self.col_start).as_u16(), 
-        //         (self.cy - self.row_offset).as_u16()
-        //     ))?;
-        //     // self.queue(MoveTo(self.status.msg().len().as_u16(), self.screen_rows.as_u16() + 1))?;
-        //     self.queue(Print("\x1b[1 q"))?;
-        // } else {
-        //     self.queue(MoveTo(
-        //         (self.rx - self.col_offset + self.col_start).as_u16(), 
-        //         (self.cy - self.row_offset).as_u16()
-        //     ))?;
-        //     self.queue(Print("\x1b[0 q"))?;
-        // }
-        // self.queue(Show)?;
+        self.execute(Show)?;
 
         Ok(())
     }
@@ -196,7 +189,7 @@ impl Screen {
         self.rx = self.cx;
 
         if self.cx < self.editor.get_buf().num_rows() {
-            self.rx = self.get_row().cx_to_rx(self.cx, self.editor.config());
+            self.rx = self.get_row().cx_to_rx(self.cx, self.config);
         }
 
         if self.cy < self.row_offset {
@@ -213,12 +206,6 @@ impl Screen {
     }
 
     pub fn draw_status_bar(&mut self) -> error::Result<()> {
-        // if self.in_status_area {
-        //     for _ in 0..self.screen_rows {
-        //         self.queue(Print("\r\n"))?;
-        //     }
-        // }
-        
         self.queue(Print("\x1b[7m"))?; // Inverts colors
 
         // File name & number of lines -- Left Aligned
@@ -278,7 +265,7 @@ impl Screen {
     pub fn draw_msg_bar(&mut self) -> error::Result<()> {
         self.queue(Clear(ClearType::CurrentLine))?;
 
-        if self.status.msg().len() > 0 && self.status.timestamp().elapsed() < self.editor.config().msg_bar_life() {
+        if self.status.msg().len() > 0 && self.status.timestamp().elapsed() < self.config.msg_bar_life() {
             self.queue(Print(self.status.msg().to_owned()))?;
         }
 
@@ -381,7 +368,16 @@ impl Screen {
     
     fn incremental_search(&mut self, query: String, ke: KeyEvent) {
         let editor = &mut self.editor;
-        
+
+        // Remove the highlight when going to a different selection or ending search
+        if let LastMatch::RowIndex(l) = editor.last_match() {
+            for hl in editor.get_buf_mut().rows_mut()[l].hl_mut() {
+                if hl.bg() == BgStyle::MatchSearch {
+                    hl.set_bg(BgStyle::Normal);
+                }
+            }
+        }
+
         match ke {
             KeyEvent { 
                 code: KeyCode::Esc | KeyCode::Enter, 
@@ -431,7 +427,6 @@ impl Screen {
             }
     
             let row = &editor.get_buf().rows()[current_line.abs() as usize];
-    
             let found_at = row.render().find(&query);
     
             if let Some(idx) = found_at {
@@ -441,13 +436,13 @@ impl Screen {
                     LastMatch::RowIndex(current_line as usize)
                 };
                 self.cy = current_line.abs() as usize;
-                self.cx = editor.get_buf().rows()[current_line.abs() as usize].rx_to_cx(idx, editor.config());
+                self.cx = editor.get_buf().rows()[current_line.abs() as usize].rx_to_cx(idx, self.config);
                 self.row_offset = editor.get_buf().num_rows();    // For scrolling behavior
 
-                // let row = &mut editor.get_buf_mut().rows_mut()[current_line.abs() as usize];
-                // for i in 0..query.len() {
-                //     row.hl_mut()[self.cx + i].set_bg(BgStyle::MatchSearch);
-                // }
+                let row = &mut editor.get_buf_mut().rows_mut()[current_line.abs() as usize];
+                for i in 0..query.len() {
+                    row.hl_mut()[self.cx + i].set_bg(BgStyle::MatchSearch);
+                }
 
                 break;
             }
@@ -705,7 +700,7 @@ impl Screen {
     /// 
     /// Takes ownership of `self`, but returns it back out if it didn't exit the program.
     pub fn process_key_event(mut self, key: &KeyEvent) -> error::Result<Self> {
-        let config = self.editor.config();
+        let config = self.config;
         let num_rows = self.editor.get_buf().num_rows();
         
         match *key {
@@ -780,7 +775,7 @@ impl Screen {
                     }
 
                     let mut buf = TextBuffer::new();
-                    buf.open(&text, self.editor.config())?;
+                    buf.open(&text, self.config)?;
 
                     self.editor.append_buf(buf);
                     self.editor.set_current_buf(self.editor.bufs().len() - 1);
@@ -1093,11 +1088,11 @@ impl Screen {
         let buf = self.editor.get_buf();
         
         if self.cy == buf.num_rows() {
-            self.editor.append_row_to_current_buf(String::new());
+            self.editor.append_row_to_current_buf(String::new(), self.config);
         }
 
         let file_col = self.cx + self.col_offset;
-        let config = self.editor.config();
+        let config = self.config;
         (*self.get_row_mut()).insert_char(file_col, ch, config);
 
         self.cx += 1;
@@ -1109,7 +1104,7 @@ impl Screen {
     /// `offset = 0` for backspace, `offset = 1` for delete.
     pub fn remove_char(&mut self, offset: usize) {
         let cx = self.cx + offset;
-        let config = self.editor.config();
+        let config = self.config;
         (*self.get_row_mut()).remove_char(cx - 1, config);
 
         self.cx -= 1;
@@ -1120,7 +1115,7 @@ impl Screen {
         let cx = self.cx;
         let col_offset = self.col_offset;
 
-        let config = self.editor.config();    
+        let config = self.config;    
         let row = (*self.get_row_mut()).split_row(cx + col_offset, config);
         let buf = self.editor.get_buf_mut();
         (*buf.rows_mut()).insert(self.cy + 1, row);
@@ -1142,7 +1137,7 @@ impl Screen {
         let prev_row_len = self.get_row().size();
         self.cy += 1;
     
-        let config = self.editor.config();
+        let config = self.config;
         let buf = self.editor.get_buf_mut();
         let file_row = self.cy;
         (*buf).merge_rows(file_row - 1, file_row, config);
@@ -1160,7 +1155,7 @@ impl Screen {
             return;
         }
     
-        let config = self.editor.config();
+        let config = self.config;
         let buf = self.editor.get_buf_mut();
         let file_row = self.cy + self.row_offset;
         (*buf).merge_rows(file_row, file_row + 1, config);
@@ -1189,6 +1184,14 @@ impl Screen {
 
     pub fn editor_mut(&mut self) -> &mut Editor {
         &mut self.editor
+    }
+
+    pub fn config(&self) -> Config {
+        self.config
+    }
+
+    pub fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
     }
 }
 

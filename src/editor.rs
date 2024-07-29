@@ -13,7 +13,6 @@ use crate::error::{self, Error};
 pub struct Editor {
     bufs: Vec<TextBuffer>,
     current_buf: usize,
-    config: Config,
     quit_times: u32,
     close_times: u32,
     last_match: LastMatch,
@@ -25,7 +24,6 @@ impl Editor {
         Self {
             bufs: vec![TextBuffer::new()],
             current_buf: 0,
-            config: Config::new(),
             quit_times: 0,
             close_times: 0,
             last_match: LastMatch::MinusOne,
@@ -33,9 +31,8 @@ impl Editor {
         }
     }
 
-    pub fn open_from(paths: &Vec<String>) -> error::Result<Self> {
+    pub fn open_from(paths: &Vec<String>, config: Config) -> error::Result<Self> {
         let mut editor = Self::new();
-        let config = editor.config();
         
         if paths.len() == 1 {
             editor.get_buf_mut().open(&paths[0], config)?;
@@ -78,8 +75,8 @@ impl Editor {
         }
     }
 
-    pub fn append_row_to_current_buf(&mut self, string: String) {
-        let config = self.config;
+    pub fn append_row_to_current_buf(&mut self, string: String, config: Config) {
+        let config = config;
         (*self.get_buf_mut()).append(string, config);
 
         self.get_buf_mut().make_dirty();
@@ -153,14 +150,6 @@ impl Editor {
         self.bufs.len()
     }
 
-    pub fn config(&self) -> Config {
-        self.config
-    }
-
-    pub fn config_mut(&mut self) -> &mut Config {
-        &mut self.config
-    }
-
     pub fn quit_times(&self) -> u32 {
         self.quit_times
     }
@@ -204,7 +193,6 @@ impl Editor {
     pub fn search_backwards(&mut self) {
         self.is_search_forward = false;
     }
-
 }
 
 #[derive(Debug, Clone, Copy)]

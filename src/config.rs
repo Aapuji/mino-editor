@@ -1,11 +1,5 @@
 use std::time::Duration;
-
 use supports_color::Stream;
-
-const DEFAULT_TAB_STOP: usize           = 4;
-const DEFAULT_QUIT_TIMES: u32           = 1;
-const DEFAULT_CLOSE_TIMES: u32          = 1;
-const DEFAULT_MSG_BAR_LIFE: Duration    = Duration::from_secs(5);
 
 /// Holds configuration information that the user can change.
 /// 
@@ -16,32 +10,11 @@ pub struct Config {
     quit_times: u32,
     close_times: u32,
     msg_bar_life: Duration,
+    prompt_bar_cursor_style: CursorStyle,
     color_support: ColorSupport
 }
 
 impl Config {
-    pub fn new() -> Self {
-        Self {
-            tab_stop: DEFAULT_TAB_STOP,
-            quit_times: DEFAULT_QUIT_TIMES,
-            close_times: DEFAULT_CLOSE_TIMES,
-            msg_bar_life: DEFAULT_MSG_BAR_LIFE,
-            color_support: if let Some(support) = supports_color::on(Stream::Stdout) {
-                if support.has_16m {
-                    ColorSupport::RGB
-                } else if support.has_256 {
-                    ColorSupport::Bit256
-                } else if support.has_basic {
-                    ColorSupport::Basic
-                } else {
-                    ColorSupport::None
-                }
-            } else {
-                ColorSupport::None
-            }
-        }
-    }
-
     pub fn tab_stop(&self) -> usize {
         self.tab_stop
     }
@@ -58,8 +31,37 @@ impl Config {
         self.msg_bar_life
     }
 
+    pub fn prompt_bar_cursor_style(&self) -> CursorStyle {
+        self.prompt_bar_cursor_style
+    }
+
     pub fn color_support(&self) -> ColorSupport {
         self.color_support
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            tab_stop: 4,
+            quit_times: 1,
+            close_times: 1,
+            msg_bar_life: Duration::from_secs(5),
+            prompt_bar_cursor_style: CursorStyle::Regular,
+            color_support: if let Some(support) = supports_color::on(Stream::Stdout) {
+                if support.has_16m {
+                    ColorSupport::RGB
+                } else if support.has_256 {
+                    ColorSupport::Bit256
+                } else if support.has_basic {
+                    ColorSupport::Basic
+                } else {
+                    ColorSupport::None
+                }
+            } else {
+                ColorSupport::None
+            }
+        }
     }
 }
 
@@ -69,4 +71,10 @@ pub enum ColorSupport {
     Bit256,
     Basic,
     None
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CursorStyle {
+    Regular,
+    BigBar
 }
