@@ -25,6 +25,66 @@ impl IntLen for usize {
     }
 }
 
+/// Computes a bit expression given `SyntaxFlag` flags and either all `|`, `&`, or `^`.
+/// 
+/// Returns `u8`.
+#[macro_export]
+macro_rules! bitexpr {
+    ( $flag:ident ) => {
+        $crate::lang::SyntaxFlags::$flag.bits()
+    };
+
+    ( $( $flag:ident )|+ ) => {
+        $(
+            $crate::lang::SyntaxFlags::$flag.bits()
+        )|+
+    };
+    
+    ( $( $flag:ident )&+ ) => {
+        $(
+            $crate::lang::SyntaxFlags::$flag.bits()
+        )&+
+    };
+
+    ( $( $flag:ident )^+ ) => {
+        $(
+            $crate::lang::SyntaxFlags::$flag.bits()
+        )^+
+    };
+}
+
+/// Checks if all given flags are in a given flag expression (bits)
+/// 
+/// Example 1: 
+/// 
+/// ```rust
+/// checkflags!(HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS in self.flags())
+/// ```
+/// 
+/// Example 2: 
+/// ```rust
+/// checkflags!(HIGHLIGHT_NUMBERS !in self.flags())
+/// ```
+#[macro_export]
+macro_rules! checkflags {
+    ( $( $flag:ident )|+ in $flags:expr ) => {
+        {
+            use bitflags::Flags;
+            use $crate::lang::SyntaxFlags;
+
+            let flags: SyntaxFlags = Flags::from_bits_truncate($flags);
+            
+            flags.contains( $(
+                SyntaxFlags::$flag
+            )|+ )
+        }
+    };
+
+    ( $( $flag:ident )|+ !in $flags:expr ) => {
+        ! checkflags!( $( $flag )|+ in $flags )
+    };    
+}
+
 pub fn prepend_prefix<'a>(paths: &'a Vec<String>, prefix: &'a Option<String>) -> Vec<String> {
     if prefix.is_none() {
         paths.clone()

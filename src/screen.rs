@@ -12,6 +12,7 @@ use crossterm::{
 };
 
 use crate::config::{Config, CursorStyle};
+use crate::lang::Syntax;
 use crate::style::BgStyle;
 use crate::MINO_VER;
 use crate::cleanup::CleanUp;
@@ -226,7 +227,7 @@ impl Screen {
         let name_len = name_str.len();
 
         // Line number -- Right Aligned
-        let line_str = format!("{}/{}", self.cy + 1, buf.num_rows());
+        let line_str = format!("{}/{} [{}]", self.cy + 1, buf.num_rows(), buf.syntax().name());
         let line_len = line_str.len();
 
         // Tab number -- Centered
@@ -929,7 +930,9 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
+                self.editor.get_buf_mut().set_cursor_pos((self.cx, self.cy));
                 self.editor.next_buf();
+                (self.cx, self.cy) = self.editor.get_buf().saved_cursor_pos();
             }
 
             // Enter (make new line)
@@ -1072,6 +1075,10 @@ impl Screen {
     fn save_file(&mut self, path: &str) -> error::Result<usize> {
         let buf = self.editor.get_buf_mut();
 
+        if let Some(ext) = buf.get_file_ext() {
+            *buf.syntax_mut() = Syntax::select_syntax(ext);
+        }
+
         let text = buf.rows_to_string();
         let bytes = text.as_bytes();
         let bytes_wrote = bytes.len();
@@ -1093,7 +1100,8 @@ impl Screen {
 
         let file_col = self.cx + self.col_offset;
         let config = self.config;
-        (*self.get_row_mut()).insert_char(file_col, ch, config);
+        let syntax = self.editor.get_buf().syntax();
+        (*self.get_row_mut()).insert_char(file_col, ch, config, syntax);
 
         self.cx += 1;
         self.editor.get_buf_mut().make_dirty();
@@ -1105,7 +1113,8 @@ impl Screen {
     pub fn remove_char(&mut self, offset: usize) {
         let cx = self.cx + offset;
         let config = self.config;
-        (*self.get_row_mut()).remove_char(cx - 1, config);
+        let syntax = self.editor.get_buf().syntax();
+        (*self.get_row_mut()).remove_char(cx - 1, config, syntax);
 
         self.cx -= 1;
         self.editor.get_buf_mut().make_dirty();
@@ -1115,8 +1124,9 @@ impl Screen {
         let cx = self.cx;
         let col_offset = self.col_offset;
 
-        let config = self.config;    
-        let row = (*self.get_row_mut()).split_row(cx + col_offset, config);
+        let config = self.config;
+        let syntax = self.editor.get_buf().syntax();
+        let row = (*self.get_row_mut()).split_row(cx + col_offset, config, syntax);
         let buf = self.editor.get_buf_mut();
         (*buf.rows_mut()).insert(self.cy + 1, row);
     

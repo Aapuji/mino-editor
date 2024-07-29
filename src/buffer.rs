@@ -1,8 +1,12 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::ops;
+use std::path::Path;
 
-use crate::error::{self, Error};
+use crate::checkflags;
 use crate::config::Config;
+use crate::error::{self, Error};
+use crate::lang::{self, Language, Syntax};
 use crate::style::{Style, FgStyle};
 
 /// Holds the text buffer that will be displayed in the editor.
@@ -12,6 +16,8 @@ pub struct TextBuffer {
     num_rows: usize,
     file_name: String,
     is_dirty: bool,
+    saved_cursor_pos: (usize, usize),
+    syntax: &'static Syntax
 }
 
 impl TextBuffer {
@@ -21,13 +27,18 @@ impl TextBuffer {
             rows: vec![],
             num_rows: 0,
             file_name: String::new(),
-            is_dirty: false
+            is_dirty: false,
+            saved_cursor_pos: (0, 0),
+            syntax: Syntax::UNKNOWN
         }
     }
 
     /// Opens the contents of a file and turns it into the `TextBuffer`'s contents.
     pub fn open(&mut self, path: &str, config: Config) -> error::Result<()> {
         self.file_name = path.to_owned();
+        if let Some(ext) = self.get_file_ext() {
+            self.syntax = Syntax::select_syntax(ext);
+        }
 
         let text = fs::read_to_string(&self.file_name).map_err(Error::from)?;
         
@@ -66,7 +77,7 @@ impl TextBuffer {
 
     /// Appends a new row to the end of the `TextBuffer`, given the characters that compose it.
     pub fn append(&mut self, chars: String, config: Config) {        
-        self.push(Row::from_chars(chars, config))
+        self.push(Row::from_chars(chars, config, self.syntax))
     }
 
     /// Appends a new row to the end of the `TextBuffer`.
@@ -95,7 +106,7 @@ impl TextBuffer {
         (*self.rows[dest_i].chars_mut()).push_str(&s);
         (*self.rows[dest_i].size_mut()) += self.rows[moving_i].size();
     
-        self.rows[dest_i].update(config);
+        self.rows[dest_i].update(config, self.syntax);
     
         self.rows.remove(moving_i);
     }
@@ -120,6 +131,12 @@ impl TextBuffer {
         &self.file_name
     }
 
+    pub fn get_file_ext(&self) -> Option<&str> {
+        Path::new(&self.file_name)
+            .extension()
+            .and_then(OsStr::to_str)
+    }
+
     pub fn file_name_mut(&mut self) -> &mut String {
         &mut self.file_name
     }
@@ -134,6 +151,22 @@ impl TextBuffer {
 
     pub fn make_clean(&mut self) {
         self.is_dirty = false;
+    }
+
+    pub fn saved_cursor_pos(&self) -> (usize, usize) {
+        self.saved_cursor_pos
+    }
+
+    pub fn set_cursor_pos(&mut self, pos: (usize, usize)) {
+        self.saved_cursor_pos = pos;
+    }
+
+    pub fn syntax(&self) -> &'static Syntax {
+        self.syntax
+    }
+
+    pub fn syntax_mut(&mut self) -> &mut &'static Syntax{
+        &mut self.syntax
     }
 }
 
@@ -164,11 +197,11 @@ impl Row {
     }
 
     /// Creates a new `Row`, given its contents, and a `Config` struct to determine details.
-    pub fn from_chars(chars: String, config: Config) -> Self {
+    pub fn from_chars(chars: String, config: Config, syntax: &'static Syntax) -> Self {
         let mut row = Row::new();
         row.chars = chars;
         row.size = row.chars.len();
-        row.update(config);
+        row.update(config, syntax);
 
         row
     }
@@ -259,7 +292,7 @@ impl Row {
     }
 
     /// Updates the `render` and `rsize` properties to align with the `chars` property.
-    pub fn update(&mut self, config: Config) {
+    pub fn update(&mut self, config: Config, syntax: &'static Syntax) {
         let mut render = String::new();
 
 		self.has_tabs = false;
@@ -277,47 +310,67 @@ impl Row {
         self.render = render;
         self.rsize = self.render.len();
 
-        self.update_highlight();
+        self.update_highlight(syntax);
     }
 
-    pub fn update_highlight(&mut self) {
+    // TODO: Create `Highlighter` iterator/struct and put this in that
+    pub fn update_highlight(&mut self, syntax: &'static Syntax) {
         self.hl = vec![];
+
+        if let Language::Unknown = syntax.lang() {
+            self.hl = vec![Style::default(); self.rsize];
+            return;
+        }
+
+        self.hl = vec![];
+        let mut is_prev_sep = true;
         
         // Use `chars.next()` to skip next item
-        let mut chars = self.render.chars();
-        while let Some(ch) = chars.next() {
-            if ch.is_digit(10) {
-                self.hl.push(Style::from(FgStyle::Normal));
+        let mut chars = self.render.char_indices();
+        while let Some((i, ch)) = chars.next() {
+            let prev_hl = if i > 0 { self.hl[i - 1] } else { Style::default() };
+
+            if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
+                ch.is_digit(10) && 
+               (is_prev_sep || prev_hl.fg() == FgStyle::Number) ||
+               (ch == '.' && prev_hl.fg() == FgStyle::Number) 
+            {
+                self.hl.push(Style::from(FgStyle::Number));
+
+                is_prev_sep = false;
+                continue;
             } else {
                 self.hl.push(Style::default());
             }
+
+            is_prev_sep = lang::is_sep(ch);
         }
     }
 
     /// Inserts the given character at the given index in the row.
-    pub fn insert_char(&mut self, mut idx: usize, ch: char, config: Config) {
+    pub fn insert_char(&mut self, mut idx: usize, ch: char, config: Config, syntax: &'static Syntax) {
         if idx > self.size {
             idx = self.size;
         }
 
         self.chars.insert(idx, ch);
         self.size += 1;
-        self.update(config);
+        self.update(config, syntax);
     }
 
     /// Removes the character at the given index of the row.
-    pub fn remove_char(&mut self, mut idx: usize, config: Config) {
+    pub fn remove_char(&mut self, mut idx: usize, config: Config, syntax: &'static Syntax) {
         if idx > self.size {
             idx = self.size;
         }
 
         self.chars.remove(idx);
         self.size -= 1;
-        self.update(config);
+        self.update(config, syntax);
     }
 
     /// Splits the current row and returns the next row created.
-    pub fn split_row(&mut self, idx: usize, config: Config) -> Row {
+    pub fn split_row(&mut self, idx: usize, config: Config, syntax: &'static Syntax) -> Row {
         if idx >= self.size {
             return Row::new();
         }
@@ -342,12 +395,12 @@ impl Row {
             is_dirty: true
         };
     
-        next_row.update(config);
+        next_row.update(config, syntax);
     
         self.chars = self.chars_at(..idx).to_owned();
         self.size = self.chars.len();
     
-        self.update(config);
+        self.update(config, syntax);
     
         next_row
     }
