@@ -1,6 +1,6 @@
 use std::fmt;
 
-use bitflags::{bitflags, Flags};
+use bitflags::bitflags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Style {
@@ -90,7 +90,8 @@ impl fmt::Display for Style {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FgStyle {
     Normal,
-    Number
+    Number,
+    String
 }
 
 impl FgStyle {
@@ -100,7 +101,8 @@ impl FgStyle {
     pub fn to_ansi(&self) -> &str {
         match self {
             Self::Normal => "38;2;204;204;204",
-            Self::Number => "38;2;250;0;0"
+            Self::Number => "38;2;181;206;168",
+            Self::String => "38;2;206;145;120"
         }
     }
 }

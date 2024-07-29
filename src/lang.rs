@@ -6,6 +6,8 @@ use crate::bitexpr;
 pub enum Language {
     Text,
     C,
+    Rust,
+    Python,
     Unknown
 }
 
@@ -14,6 +16,8 @@ impl Language {
         match self {
             Self::Text      => "Text",
             Self::C         => "C",
+            Self::Rust      => "Rust",
+            Self::Python    => "Python",
             Self::Unknown   => "?"
         }
     }
@@ -22,6 +26,8 @@ impl Language {
         match self {
             Self::Text      => &["txt"],
             Self::C         => &["c", "h"],
+            Self::Rust      => &["rs"],
+            Self::Python    => &["py"],
             Self::Unknown   => &[]
         }
     }
@@ -45,7 +51,7 @@ bitflags! {
 }
 
 impl Syntax {
-    pub const SYNTAX_SET: [&'static Syntax; 2] = [Self::TEXT, Self::C];
+    pub const SYNTAX_SET: [&'static Syntax; 4] = [Self::TEXT, Self::C, Self::RUST, Self::PYTHON];
 
     pub const TEXT: &'static Syntax = &Syntax {
         lang: &Language::Text,
@@ -55,6 +61,18 @@ impl Syntax {
     
     pub const C: &'static Self = &Self {
         lang: &Language::C,
+        keywords: &[],
+        flags: bitexpr!(HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS)
+    };
+
+    pub const RUST: &'static Self = &Self {
+        lang: &Language::Rust,
+        keywords: &[],
+        flags: bitexpr!(HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS)
+    };
+
+    pub const PYTHON: &'static Self = &Self {
+        lang: &Language::Python,
         keywords: &[],
         flags: bitexpr!(HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS)
     };

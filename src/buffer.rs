@@ -46,6 +46,10 @@ impl TextBuffer {
             .lines()
             .for_each(|l| self.append(l.to_owned(), config));
 
+        self.rows
+            .iter_mut()
+            .for_each(|r| r.update_highlight(self.syntax));
+
         self.is_dirty = false;
 
         Ok(())
@@ -315,22 +319,48 @@ impl Row {
 
     // TODO: Create `Highlighter` iterator/struct and put this in that
     pub fn update_highlight(&mut self, syntax: &'static Syntax) {
-        self.hl = vec![];
-
         if let Language::Unknown = syntax.lang() {
             self.hl = vec![Style::default(); self.rsize];
             return;
         }
 
-        self.hl = vec![];
+        self.hl = Vec::with_capacity(self.rsize);
         let mut is_prev_sep = true;
+        let mut quote: Option<char> = None;
         
         // Use `chars.next()` to skip next item
         let mut chars = self.render.char_indices();
         while let Some((i, ch)) = chars.next() {
             let prev_hl = if i > 0 { self.hl[i - 1] } else { Style::default() };
 
-            if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
+            // Highlight string
+            if checkflags!(HIGHLIGHT_STRINGS in syntax.flags())
+            {
+                if let Some(delim) = quote {
+                    self.hl.push(Style::from(FgStyle::String));
+
+                    // Escape character
+                    if ch == '\\' && i + 1 < self.rsize {
+                        self.hl.push(Style::from(FgStyle::String));                     // <-- HERE
+                        chars.next(); // Throw away next value, as it was already highlighted (^^^^)
+                        continue;
+                    }
+
+                    if ch == delim {
+                        quote = None;
+                    }
+
+                    is_prev_sep = true;
+                    continue;
+                } else if ch == '"' || ch == '\'' {
+                    quote = Some(ch);
+                    self.hl.push(Style::from(FgStyle::String));
+                    continue;
+                }
+            }
+                
+            // Highligh number
+             if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
                 ch.is_digit(10) && 
                (is_prev_sep || prev_hl.fg() == FgStyle::Number) ||
                (ch == '.' && prev_hl.fg() == FgStyle::Number) 
