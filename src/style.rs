@@ -110,7 +110,7 @@ impl FgStyle {
             Self::Comment       => "38;2;106;153;85",
             Self::Keyword       => "38;2;86;156;214",
             Self::Flowword      => "38;2;197;134;192",
-            Self::CommonType    => "38;2;255;0;0" // placeholder
+            Self::CommonType    => "38;2;78;201;176"
         }
     }
 }

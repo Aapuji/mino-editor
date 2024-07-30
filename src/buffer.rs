@@ -2,6 +2,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::ops;
 use std::path::Path;
+use std::rc::Rc;
 
 use crate::checkflags;
 use crate::config::Config;
@@ -328,6 +329,7 @@ impl Row {
         self.hl = Vec::with_capacity(self.rsize);
         let mut is_prev_sep = true;
         let mut quote: Option<char> = None;
+        let mut nested_comments = 0u32; // # of nested comments
         
         // Use `chars.next()` to skip next item
         let mut chars = self.render.char_indices();
@@ -336,15 +338,59 @@ impl Row {
             let prev_hl = if i > 0 { self.hl[i - 1] } else { Style::default() };
 
             // Highlight Single-line Comment
-            if checkflags!(SINGLE_LN_COMMENT in syntax.flags()) && 
-                quote.is_none() &&
-                syntax.ln_comment().unwrap() == self.rchars_at(i..i+syntax.ln_comment().unwrap().len())
-            {
-                self.hl.append(&mut vec![Style::from(FgStyle::Comment); self.rsize - self.hl.len()]);
-                break;
+            if let Some(ln_comment) = syntax.ln_comment() {
+                if quote.is_none() &&
+                    ln_comment == self.rchars_at(i..i+ln_comment.len())
+                {
+                    self.hl.append(&mut vec![Style::from(FgStyle::Comment); self.rsize - self.hl.len()]);
+                    break;
+                }
             }
 
-            // Highlight string
+            // Highlight Multi-line Comment
+            if let Some((mc_start, mc_end)) = syntax.multi_comment() {
+                if quote.is_none() {
+                    let start_len = mc_start.len();
+                    let end_len = mc_end.len();
+
+                    if mc_start == self.rchars_at(i..i+start_len) {
+                        for _ in 0..start_len {
+                            self.hl.push(Style::from(FgStyle::Comment));
+                            next = chars.next();
+                        }
+
+                        nested_comments += 1;
+                        continue;
+                    }
+
+                    if nested_comments > 0 {
+                        self.hl.push(Style::from(FgStyle::Comment));
+
+                        if mc_end == self.rchars_at(i..i+end_len) {
+                            for _ in 0..end_len-1 {
+                                self.hl.push(Style::from(FgStyle::Comment));
+                                chars.next();
+                            }
+                            next = chars.next();
+
+                            if checkflags!(NESTED_COMMENTS in syntax.flags()) {
+                                nested_comments -= 1;
+                            } else {
+                                nested_comments = 0;
+                            }
+                            
+                            is_prev_sep = true;
+                            continue;
+                        } else {
+                            next = chars.next();
+                            continue;
+                        }
+                    }
+                }
+            }
+
+
+            // Highlight String
             if checkflags!(HIGHLIGHT_STRINGS in syntax.flags())
             {
                 if let Some(delim) = quote {
@@ -373,7 +419,7 @@ impl Row {
                 }
             }
                 
-            // Highlight number
+            // Highlight Number
             if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
                 ch.is_digit(10) && 
                (is_prev_sep || prev_hl.fg() == FgStyle::Number) ||
@@ -386,7 +432,7 @@ impl Row {
                 continue;
             }
 
-            // Highlight keywords
+            // Highlight Keywords
             if is_prev_sep {
                 if quote.is_none() {
                     for keyword in syntax.keywords() {
@@ -396,6 +442,68 @@ impl Row {
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
                             self.hl.append(&mut vec![Style::from(FgStyle::Keyword); len]);
+
+                            for _ in 0..len {
+                                next = chars.next();
+                            }
+
+                            is_prev_sep = false;
+                            break;
+                        }
+                    }
+                }
+
+                if !is_prev_sep {
+                    if let Some((_, ch)) = next {
+                        if is_sep(ch) {
+                            is_prev_sep = true;
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            // Highlight Ctrl Flow Keywords
+            if is_prev_sep {
+                if quote.is_none() {
+                    for flowword in syntax.flowwords() {
+                        let len = flowword.len();
+                        if *flowword == self.rchars_at(i..i+len) &&
+                            (self.rsize == i + len || 
+                            is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
+                        {
+                            self.hl.append(&mut vec![Style::from(FgStyle::Flowword); len]);
+
+                            for _ in 0..len {
+                                next = chars.next();
+                            }
+
+                            is_prev_sep = false;
+                            break;
+                        }
+                    }
+                }
+
+                if !is_prev_sep {
+                    if let Some((_, ch)) = next {
+                        if is_sep(ch) {
+                            is_prev_sep = true;
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            // Highlight Common Types
+            if is_prev_sep {
+                if quote.is_none() {
+                    for common_type in syntax.common_types() {
+                        let len = common_type.len();
+                        if *common_type == self.rchars_at(i..i+len) &&
+                            (self.rsize == i + len || 
+                            is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
+                        {
+                            self.hl.append(&mut vec![Style::from(FgStyle::CommonType); len]);
 
                             for _ in 0..len {
                                 next = chars.next();
