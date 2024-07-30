@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::checkflags;
 use crate::config::Config;
 use crate::error::{self, Error};
+use crate::lang::is_sep;
 use crate::lang::{self, Language, Syntax};
 use crate::style::{Style, FgStyle};
 
@@ -330,8 +331,18 @@ impl Row {
         
         // Use `chars.next()` to skip next item
         let mut chars = self.render.char_indices();
-        while let Some((i, ch)) = chars.next() {
+        let mut next = chars.next();
+        while let Some((i, ch)) = next {
             let prev_hl = if i > 0 { self.hl[i - 1] } else { Style::default() };
+
+            // Highlight Single-line Comment
+            if checkflags!(SINGLE_LN_COMMENT in syntax.flags()) && 
+                quote.is_none() &&
+                syntax.ln_comment().unwrap() == self.rchars_at(i..i+syntax.ln_comment().unwrap().len())
+            {
+                self.hl.append(&mut vec![Style::from(FgStyle::Comment); self.rsize - self.hl.len()]);
+                break;
+            }
 
             // Highlight string
             if checkflags!(HIGHLIGHT_STRINGS in syntax.flags())
@@ -343,6 +354,7 @@ impl Row {
                     if ch == '\\' && i + 1 < self.rsize {
                         self.hl.push(Style::from(FgStyle::String));                     // <-- HERE
                         chars.next(); // Throw away next value, as it was already highlighted (^^^^)
+                        next = chars.next(); // TODO: Make advance fn to do this, perhaps in Highlight iterator?
                         continue;
                     }
 
@@ -351,16 +363,18 @@ impl Row {
                     }
 
                     is_prev_sep = true;
+                    next = chars.next();
                     continue;
                 } else if ch == '"' || ch == '\'' {
                     quote = Some(ch);
                     self.hl.push(Style::from(FgStyle::String));
+                    next = chars.next();
                     continue;
                 }
             }
                 
-            // Highligh number
-             if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
+            // Highlight number
+            if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
                 ch.is_digit(10) && 
                (is_prev_sep || prev_hl.fg() == FgStyle::Number) ||
                (ch == '.' && prev_hl.fg() == FgStyle::Number) 
@@ -368,12 +382,44 @@ impl Row {
                 self.hl.push(Style::from(FgStyle::Number));
 
                 is_prev_sep = false;
+                next = chars.next();
                 continue;
-            } else {
-                self.hl.push(Style::default());
             }
 
+            // Highlight keywords
+            if is_prev_sep {
+                if quote.is_none() {
+                    for keyword in syntax.keywords() {
+                        let len = keyword.len();
+                        if *keyword == self.rchars_at(i..i+len) &&
+                            (self.rsize == i + len || 
+                            is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
+                        {
+                            self.hl.append(&mut vec![Style::from(FgStyle::Keyword); len]);
+
+                            for _ in 0..len {
+                                next = chars.next();
+                            }
+
+                            is_prev_sep = false;
+                            break;
+                        }
+                    }
+                }
+
+                if !is_prev_sep {
+                    if let Some((_, ch)) = next {
+                        if is_sep(ch) {
+                            is_prev_sep = true;
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            self.hl.push(Style::default());
             is_prev_sep = lang::is_sep(ch);
+            next = chars.next();
         }
     }
 

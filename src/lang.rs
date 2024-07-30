@@ -37,6 +37,11 @@ impl Language {
 pub struct Syntax {
     lang: &'static Language,
     keywords: &'static [&'static str],
+    /// Keywords used for contol flow: if empty they're part of the keywords attribute instead
+    flow_keywords: &'static [&'static str],
+    /// Common types (basically keywords but a different color)
+    common_types: &'static [&'static str],
+    ln_comment: Option<&'static str>,
     flags: u8
 }
 
@@ -44,8 +49,10 @@ bitflags! {
     /// Struct that holds flags/modifiers for the language's syntax
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct SyntaxFlags: u8 {
-        const HIGHLIGHT_NUMBERS = 0b0000_0001;
-        const HIGHLIGHT_STRINGS = 0b0000_0010;
+        const HIGHLIGHT_NUMBERS = 0b0000_0001;  // Whether to highlight numbers
+        const HIGHLIGHT_STRINGS = 0b0000_0010;  // Whether to highlight strings
+        const SINGLE_CHAR_LIT   = 0b0000_0100;  // Whether to restrict '' literals to one char long
+        const SINGLE_LN_COMMENT = 0b0000_1000;  // Whether to have single_line comments
         const NONE              = 0b0000_0000;
     }
 }
@@ -56,25 +63,46 @@ impl Syntax {
     pub const TEXT: &'static Syntax = &Syntax {
         lang: &Language::Text,
         keywords: &[],
+        flow_keywords: &[],
+        common_types: &[],
+        ln_comment: None,
         flags: bitexpr!(NONE)
     };
     
     pub const C: &'static Self = &Self {
         lang: &Language::C,
-        keywords: &[],
-        flags: bitexpr!(HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS)
+        keywords: &["struct", "union", "typedef", "static", "enum"],
+        flow_keywords: &["switch", "if", "while", "for", "break", "continue", "return", "else", "case"],
+        common_types: &["int", "long", "double", "float", "char", "unsigned", "signed", "void"],
+        ln_comment: Some("//"),
+        flags: bitexpr! {
+            HIGHLIGHT_NUMBERS | 
+            HIGHLIGHT_STRINGS | SINGLE_CHAR_LIT | 
+            SINGLE_LN_COMMENT
+        }
     };
 
+    // TODO: For rust, change colors to have types be the greenish, and darkblue for keywords, purple for flowwords 
     pub const RUST: &'static Self = &Self {
         lang: &Language::Rust,
-        keywords: &[],
-        flags: bitexpr!(HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS)
+        keywords: &["as", "const", "crate", "enum" , "extern", "false", "fn", "impl", "let", "mod", "move", "mut", "pub", "ref", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where"], 
+        flow_keywords: &["break", "continue", "else", "for", "if", "in", "loop", "match", "return", "while"],
+        common_types: &["u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128", "usize", "isize", "str"],
+        ln_comment: Some("//"),
+        flags: bitexpr! {
+            HIGHLIGHT_NUMBERS | 
+            HIGHLIGHT_STRINGS | SINGLE_CHAR_LIT | 
+            SINGLE_LN_COMMENT
+        }
     };
 
     pub const PYTHON: &'static Self = &Self {
         lang: &Language::Python,
         keywords: &[],
-        flags: bitexpr!(HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS)
+        flow_keywords: &[],
+        common_types: &[],
+        ln_comment: Some("#"),
+        flags: bitexpr!(HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS | SINGLE_LN_COMMENT)
     };
 
     pub const UNKNOWN: &'static Self = &Self {
@@ -106,6 +134,10 @@ impl Syntax {
 
     pub fn keywords(&self) -> &'static [&'static str] {
         self.keywords
+    }
+
+    pub fn ln_comment(&self) -> Option<&'static str> {
+        self.ln_comment
     }
 
     pub fn flags(&self) -> u8 {

@@ -91,7 +91,11 @@ impl fmt::Display for Style {
 pub enum FgStyle {
     Normal,
     Number,
-    String
+    String,
+    Comment,
+    Keyword,
+    Flowword,
+    CommonType
 }
 
 impl FgStyle {
@@ -100,9 +104,13 @@ impl FgStyle {
     /// Returns the ANSI sequence for this style, not including the initial `<ESC>[` or the final `m`.
     pub fn to_ansi(&self) -> &str {
         match self {
-            Self::Normal => "38;2;204;204;204",
-            Self::Number => "38;2;181;206;168",
-            Self::String => "38;2;206;145;120"
+            Self::Normal        => "38;2;204;204;204",
+            Self::Number        => "38;2;181;206;168",
+            Self::String        => "38;2;206;145;120",
+            Self::Comment       => "38;2;106;153;85",
+            Self::Keyword       => "38;2;86;156;214",
+            Self::Flowword      => "38;2;197;134;192",
+            Self::CommonType    => "38;2;255;0;0" // placeholder
         }
     }
 }
