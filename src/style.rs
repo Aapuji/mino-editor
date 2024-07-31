@@ -1,62 +1,83 @@
 use std::fmt;
-
 use bitflags::bitflags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Style {
-    fg: FgStyle,
-    bg: BgStyle,
-    font: FontStyle
+    fg: Option<Rgb>, // If these are None, then don't override styles
+    bg: Option<Rgb>, 
+    font: Option<FontStyle>
 }
 
 impl Style {
     pub const RESET: &'static str = "\x1b[m";
 
-    pub fn new(fg: FgStyle, bg: BgStyle, font: FontStyle) -> Self {
+    pub fn new(fg: Option<Rgb>, bg: Option<Rgb>, font: Option<FontStyle>) -> Self {
         Self { fg, bg, font }
     }
+    
+    pub fn default_values() -> Self {
+        Self {
+            fg: Some(Self::fg_default()),
+            bg: Some(Self::bg_default()),
+            font: Some(FontStyle::default())
+        }
+    }
 
-    pub fn fg(&self) -> FgStyle {
+    pub fn from_fg(fg: Rgb) -> Self {
+        Self {
+            fg: Some(fg),
+            bg: None,
+            font: None
+        }
+    }
+
+    pub fn from_bg(bg: Rgb) -> Self {
+        Self {
+            fg: None,
+            bg: Some(bg),
+            font: None
+        }
+    }
+
+    pub fn fg(&self) -> Option<Rgb> {
         self.fg
     }
 
-    pub fn set_fg(&mut self, fg: FgStyle) {
+    pub fn set_fg(&mut self, fg: Option<Rgb>) {
         self.fg = fg;
     }
 
-    pub fn bg(&self) -> BgStyle {
-        self.bg
+    pub fn bg(&self) -> &Option<Rgb> {
+        &self.bg
     }
 
-    pub fn set_bg(&mut self, bg: BgStyle) {
+    pub fn set_bg(&mut self, bg: Option<Rgb>) {
         self.bg = bg;
     }
 
-    pub fn font(&self) -> FontStyle {
+    pub fn font(&self) -> Option<FontStyle> {
         self.font
     }
 
-    pub fn set_font(&mut self, font: FontStyle) {
+    pub fn set_font(&mut self, font: Option<FontStyle>) {
         self.font = font;
     }
-}
 
-impl From<FgStyle> for Style {
-    fn from(value: FgStyle) -> Self {
-        Self {
-            fg: value,
-            bg: BgStyle::default(),
-            font: FontStyle::default()
-        }
+    pub fn fg_default() -> Rgb {
+        Rgb(204, 204, 204)
+    }
+
+    pub fn bg_default() -> Rgb {
+        Rgb(12, 12, 12)
     }
 }
 
-impl From<BgStyle> for Style {
-    fn from(value: BgStyle) -> Self {
-        Self {
-            fg: FgStyle::default(),
-            bg: value,
-            font: FontStyle::default()
+impl Default for Style {
+    fn default() -> Self {
+        Self { 
+            fg: None, 
+            bg: None,
+            font: None
         }
     }
 }
@@ -64,99 +85,27 @@ impl From<BgStyle> for Style {
 impl From<FontStyle> for Style {
     fn from(value: FontStyle) -> Self {
         Self {
-            fg: FgStyle::default(),
-            bg: BgStyle::default(),
-            font: value
+            fg: None,
+            bg: None,
+            font: Some(value)
         }
     }
 }
 
-impl Default for Style {
-    fn default() -> Self {
-        Self { 
-            fg: FgStyle::default(), 
-            bg: BgStyle::default(),
-            font: FontStyle::default()
-        }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Rgb(pub u8, pub u8, pub u8);
+
+impl Rgb {
+    pub fn to_ansi(&self) -> String {
+        format!("{};{};{}", self.0, self.1, self.2)
     }
 }
 
-impl fmt::Display for Style {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "\x1b[{}{};{}m", self.font, self.fg, self.bg)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FgStyle {
-    Normal,
-    Number,
-    String,
-    Comment,
-    Keyword,
-    Flowword,
-    CommonType
-}
-
-impl FgStyle {
-    pub const RESET: &'static str = "\x1b[m";
-
-    /// Returns the ANSI sequence for this style, not including the initial `<ESC>[` or the final `m`.
-    pub fn to_ansi(&self) -> &str {
-        match self {
-            Self::Normal        => "38;2;204;204;204",
-            Self::Number        => "38;2;181;206;168",
-            Self::String        => "38;2;206;145;120",
-            Self::Comment       => "38;2;106;153;85",
-            Self::Keyword       => "38;2;86;156;214",
-            Self::Flowword      => "38;2;197;134;192",
-            Self::CommonType    => "38;2;78;201;176"
-        }
-    }
-}
-
-impl Default for FgStyle {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
-impl fmt::Display for FgStyle {
+impl fmt::Display for Rgb {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_ansi())
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BgStyle {
-    Normal,
-    MatchSearch
-}
-
-impl BgStyle {
-    pub const RESET: &'static str = "\x1b[m";
-
-    /// Returns the ANSI sequence for this style, not including the initial `<ESC>[` or the final `m`.
-    pub fn to_ansi(&self) -> &str {
-        match self {
-            Self::Normal        => "48;2;12;12;12",
-            Self::MatchSearch   => "48;2;0;0;250"
-        }
-    }
-}
-
-impl Default for BgStyle {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
-impl fmt::Display for BgStyle {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_ansi())
-    }
-}
-
 
 bitflags! {
     /// Represents the set of possible font styles
