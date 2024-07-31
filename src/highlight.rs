@@ -1,4 +1,6 @@
-use crate::style::{FgStyle, Rgb, Style};
+use core::fmt;
+
+use crate::style::{Rgb, Style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Highlight {
@@ -15,7 +17,7 @@ pub enum Highlight {
 impl Highlight {
     pub fn to_style(self) -> Style {
         match self {
-            Self::Normal    => Style::from_fg(Style::fg_default()),
+            Self::Normal    => Style::default(),
             Self::Number    => Style::from_fg(Rgb(181, 206, 168)),
             Self::String    => Style::from_fg(Rgb(206, 145, 120)),
             Self::Comment   => Style::from_fg(Rgb(106, 153, 85)),
@@ -30,5 +32,11 @@ impl Highlight {
 impl Default for Highlight {
     fn default() -> Self {
         Self::Normal
+    }
+}
+
+impl fmt::Display for Highlight {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_style())
     }
 }

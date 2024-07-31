@@ -2,14 +2,13 @@ use std::ffi::OsStr;
 use std::fs;
 use std::ops;
 use std::path::Path;
-use std::rc::Rc;
 
 use crate::checkflags;
 use crate::config::Config;
 use crate::error::{self, Error};
-use crate::lang::is_sep;
-use crate::lang::{self, Language, Syntax};
-use crate::style::{Style, FgStyle};
+use crate::highlight::Highlight;
+use crate::lang::{self, is_sep, Language, Syntax};
+use crate::style::Style;
 
 /// Holds the text buffer that will be displayed in the editor.
 #[derive(Debug)]
@@ -183,7 +182,7 @@ pub struct Row {
     rsize: usize,
     chars: String,
     render: String,
-    hl: Vec<Style>,
+    hl: Vec<Highlight>,
 	has_tabs: bool,
     is_dirty: bool
 }
@@ -228,6 +227,7 @@ impl Row {
         &self.render[Self::index_range(&self.render, self.rsize, range)]
     }
 
+    /// Gets the chars at the given `range` of `self.render`, applying any highlights according to `self.hl`.
     pub fn hlchars_at<R>(&self, range: R) -> String
     where 
         R: ops::RangeBounds<usize>
@@ -322,7 +322,7 @@ impl Row {
     // TODO: Create `Highlighter` iterator/struct and put this in that
     pub fn update_highlight(&mut self, syntax: &'static Syntax) {
         if let Language::Unknown = syntax.lang() {
-            self.hl = vec![Style::default(); self.rsize];
+            self.hl = vec![Highlight::default(); self.rsize];
             return;
         }
 
@@ -335,14 +335,14 @@ impl Row {
         let mut chars = self.render.char_indices();
         let mut next = chars.next();
         while let Some((i, ch)) = next {
-            let prev_hl = if i > 0 { self.hl[i - 1] } else { Style::default() };
+            let prev_hl = if i > 0 { self.hl[i - 1] } else { Highlight::default() };
 
             // Highlight Single-line Comment
             if let Some(ln_comment) = syntax.ln_comment() {
                 if quote.is_none() &&
                     ln_comment == self.rchars_at(i..i+ln_comment.len())
                 {
-                    self.hl.append(&mut vec![Style::from(FgStyle::Comment); self.rsize - self.hl.len()]);
+                    self.hl.append(&mut vec![Highlight::Comment; self.rsize - self.hl.len()]);
                     break;
                 }
             }
@@ -355,7 +355,7 @@ impl Row {
 
                     if mc_start == self.rchars_at(i..i+start_len) {
                         for _ in 0..start_len {
-                            self.hl.push(Style::from(FgStyle::Comment));
+                            self.hl.push(Highlight::Comment);
                             next = chars.next();
                         }
 
@@ -364,11 +364,11 @@ impl Row {
                     }
 
                     if nested_comments > 0 {
-                        self.hl.push(Style::from(FgStyle::Comment));
+                        self.hl.push(Highlight::Comment);
 
                         if mc_end == self.rchars_at(i..i+end_len) {
                             for _ in 0..end_len-1 {
-                                self.hl.push(Style::from(FgStyle::Comment));
+                                self.hl.push(Highlight::Comment);
                                 chars.next();
                             }
                             next = chars.next();
@@ -394,11 +394,11 @@ impl Row {
             if checkflags!(HIGHLIGHT_STRINGS in syntax.flags())
             {
                 if let Some(delim) = quote {
-                    self.hl.push(Style::from(FgStyle::String));
+                    self.hl.push(Highlight::String);
 
                     // Escape character
                     if ch == '\\' && i + 1 < self.rsize {
-                        self.hl.push(Style::from(FgStyle::String));                     // <-- HERE
+                        self.hl.push(Highlight::String);                                // <-- HERE
                         chars.next(); // Throw away next value, as it was already highlighted (^^^^)
                         next = chars.next(); // TODO: Make advance fn to do this, perhaps in Highlight iterator?
                         continue;
@@ -413,7 +413,7 @@ impl Row {
                     continue;
                 } else if ch == '"' || ch == '\'' {
                     quote = Some(ch);
-                    self.hl.push(Style::from(FgStyle::String));
+                    self.hl.push(Highlight::String);
                     next = chars.next();
                     continue;
                 }
@@ -422,10 +422,10 @@ impl Row {
             // Highlight Number
             if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
                 ch.is_digit(10) && 
-               (is_prev_sep || prev_hl.fg() == FgStyle::Number) ||
-               (ch == '.' && prev_hl.fg() == FgStyle::Number) 
+               (is_prev_sep || prev_hl == Highlight::Number) ||
+               (ch == '.' && prev_hl == Highlight::Number) 
             {
-                self.hl.push(Style::from(FgStyle::Number));
+                self.hl.push(Highlight::Number);
 
                 is_prev_sep = false;
                 next = chars.next();
@@ -441,7 +441,7 @@ impl Row {
                             (self.rsize == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
-                            self.hl.append(&mut vec![Style::from(FgStyle::Keyword); len]);
+                            self.hl.append(&mut vec![Highlight::Keyword; len]);
 
                             for _ in 0..len {
                                 next = chars.next();
@@ -472,7 +472,7 @@ impl Row {
                             (self.rsize == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
-                            self.hl.append(&mut vec![Style::from(FgStyle::Flowword); len]);
+                            self.hl.append(&mut vec![Highlight::Flowword; len]);
 
                             for _ in 0..len {
                                 next = chars.next();
@@ -503,7 +503,7 @@ impl Row {
                             (self.rsize == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
-                            self.hl.append(&mut vec![Style::from(FgStyle::CommonType); len]);
+                            self.hl.append(&mut vec![Highlight::Type; len]);
 
                             for _ in 0..len {
                                 next = chars.next();
@@ -525,7 +525,7 @@ impl Row {
                 }
             }
 
-            self.hl.push(Style::default());
+            self.hl.push(Highlight::default());
             is_prev_sep = lang::is_sep(ch);
             next = chars.next();
         }
@@ -660,11 +660,11 @@ impl Row {
         &mut self.render
     }
 
-    pub fn hl(&self) -> &Vec<Style> {
+    pub fn hl(&self) -> &Vec<Highlight> {
         &self.hl
     }
 
-    pub fn hl_mut(&mut self) -> &mut Vec<Style> {
+    pub fn hl_mut(&mut self) -> &mut Vec<Highlight> {
         &mut self.hl
     }
 

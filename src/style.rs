@@ -3,63 +3,55 @@ use bitflags::bitflags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Style {
-    fg: Option<Rgb>, // If these are None, then don't override styles
-    bg: Option<Rgb>, 
-    font: Option<FontStyle>
+    fg: Rgb,
+    bg: Rgb, 
+    font: FontStyle
 }
 
 impl Style {
     pub const RESET: &'static str = "\x1b[m";
 
-    pub fn new(fg: Option<Rgb>, bg: Option<Rgb>, font: Option<FontStyle>) -> Self {
+    pub fn new(fg: Rgb, bg: Rgb, font: FontStyle) -> Self {
         Self { fg, bg, font }
-    }
-    
-    pub fn default_values() -> Self {
-        Self {
-            fg: Some(Self::fg_default()),
-            bg: Some(Self::bg_default()),
-            font: Some(FontStyle::default())
-        }
     }
 
     pub fn from_fg(fg: Rgb) -> Self {
         Self {
-            fg: Some(fg),
-            bg: None,
-            font: None
+            fg: fg,
+            bg: Self::bg_default(),
+            font: FontStyle::default()
         }
     }
 
     pub fn from_bg(bg: Rgb) -> Self {
         Self {
-            fg: None,
-            bg: Some(bg),
-            font: None
+            fg: Self::fg_default(),
+            bg: bg,
+            font: FontStyle::default()
         }
     }
 
-    pub fn fg(&self) -> Option<Rgb> {
-        self.fg
+    pub fn fg(&self) -> &Rgb {
+        &self.fg
     }
 
-    pub fn set_fg(&mut self, fg: Option<Rgb>) {
+    pub fn set_fg(&mut self, fg: Rgb) {
         self.fg = fg;
     }
 
-    pub fn bg(&self) -> &Option<Rgb> {
+    pub fn bg(&self) -> &Rgb {
         &self.bg
     }
 
-    pub fn set_bg(&mut self, bg: Option<Rgb>) {
+    pub fn set_bg(&mut self, bg: Rgb) {
         self.bg = bg;
     }
 
-    pub fn font(&self) -> Option<FontStyle> {
+    pub fn font(&self) -> FontStyle {
         self.font
     }
 
-    pub fn set_font(&mut self, font: Option<FontStyle>) {
+    pub fn set_font(&mut self, font: FontStyle) {
         self.font = font;
     }
 
@@ -74,20 +66,27 @@ impl Style {
 
 impl Default for Style {
     fn default() -> Self {
-        Self { 
-            fg: None, 
-            bg: None,
-            font: None
+        Self {
+            fg: Self::fg_default(),
+            bg: Self::bg_default(),
+            font: FontStyle::default()
         }
+    }
+}
+
+impl fmt::Display for Style {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // write!(f, "\x1b[{};48;2;{}38;2;{}m", self.font, self.bg, self.fg)
+        write!(f, "\x1b[{}48;2;{};38;2;{}m", self.font, self.bg, self.fg)
     }
 }
 
 impl From<FontStyle> for Style {
     fn from(value: FontStyle) -> Self {
         Self {
-            fg: None,
-            bg: None,
-            font: Some(value)
+            fg: Self::fg_default(),
+            bg: Self::bg_default(),
+            font: value
         }
     }
 }

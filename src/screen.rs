@@ -12,8 +12,8 @@ use crossterm::{
 };
 
 use crate::config::{Config, CursorStyle};
+use crate::highlight::Highlight;
 use crate::lang::Syntax;
-use crate::style::BgStyle;
 use crate::MINO_VER;
 use crate::cleanup::CleanUp;
 use crate::buffer::{Row, TextBuffer};
@@ -373,8 +373,8 @@ impl Screen {
         // Remove the highlight when going to a different selection or ending search
         if let LastMatch::RowIndex(l) = editor.last_match() {
             for hl in editor.get_buf_mut().rows_mut()[l].hl_mut() {
-                if hl.bg() == BgStyle::MatchSearch {
-                    hl.set_bg(BgStyle::Normal);
+                if let &mut Highlight::Search = hl {
+                    *hl = Highlight::Normal;
                 }
             }
         }
@@ -442,7 +442,7 @@ impl Screen {
 
                 let row = &mut editor.get_buf_mut().rows_mut()[current_line.abs() as usize];
                 for i in 0..query.len() {
-                    row.hl_mut()[self.cx + i].set_bg(BgStyle::MatchSearch);
+                    row.hl_mut()[self.cx + i] = Highlight::Search;
                 }
 
                 break;
