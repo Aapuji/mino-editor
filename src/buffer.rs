@@ -389,49 +389,6 @@ impl Row {
                 }
             }
 
-
-            // Highlight String
-            if checkflags!(HIGHLIGHT_STRINGS in syntax.flags())
-            {
-                if let Some(delim) = quote {
-                    self.hl.push(Highlight::String);
-
-                    // Escape character
-                    if ch == '\\' && i + 1 < self.rsize {
-                        self.hl.push(Highlight::String);                                // <-- HERE
-                        chars.next(); // Throw away next value, as it was already highlighted (^^^^)
-                        next = chars.next(); // TODO: Make advance fn to do this, perhaps in Highlight iterator?
-                        continue;
-                    }
-
-                    if ch == delim {
-                        quote = None;
-                    }
-
-                    is_prev_sep = true;
-                    next = chars.next();
-                    continue;
-                } else if ch == '"' || ch == '\'' {
-                    quote = Some(ch);
-                    self.hl.push(Highlight::String);
-                    next = chars.next();
-                    continue;
-                }
-            }
-                
-            // Highlight Number
-            if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
-                ch.is_digit(10) && 
-               (is_prev_sep || prev_hl == Highlight::Number) ||
-               (ch == '.' && prev_hl == Highlight::Number) 
-            {
-                self.hl.push(Highlight::Number);
-
-                is_prev_sep = false;
-                next = chars.next();
-                continue;
-            }
-
             // Highlight Keywords
             if is_prev_sep {
                 if quote.is_none() {
@@ -523,6 +480,48 @@ impl Row {
                     }
                     continue;
                 }
+            }
+
+            // Highlight Strings
+            if checkflags!(HIGHLIGHT_STRINGS in syntax.flags())
+            {
+                if let Some(delim) = quote {
+                    self.hl.push(Highlight::String);
+
+                    // Escape character
+                    if ch == '\\' && i + 1 < self.rsize {
+                        self.hl.push(Highlight::String);                                // <-- HERE
+                        chars.next(); // Throw away next value, as it was already highlighted (^^^^)
+                        next = chars.next(); // TODO: Make advance fn to do this, perhaps in Highlight iterator?
+                        continue;
+                    }
+
+                    if ch == delim {
+                        quote = None;
+                    }
+
+                    is_prev_sep = true;
+                    next = chars.next();
+                    continue;
+                } else if ch == '"' || ch == '\'' {
+                    quote = Some(ch);
+                    self.hl.push(Highlight::String);
+                    next = chars.next();
+                    continue;
+                }
+            }
+                
+            // Highlight Number
+            if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
+                ch.is_digit(10) && 
+               (is_prev_sep || prev_hl == Highlight::Number) ||
+               (ch == '.' && prev_hl == Highlight::Number) 
+            {
+                self.hl.push(Highlight::Number);
+
+                is_prev_sep = false;
+                next = chars.next();
+                continue;
             }
 
             self.hl.push(Highlight::default());

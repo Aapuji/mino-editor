@@ -87,7 +87,7 @@ impl Syntax {
 
     pub const RUST: &'static Self = &Self {
         lang: &Language::Rust,
-        keywords: &["as", "const", "crate", "enum" , "extern", "false", "fn", "impl", "let", "mod", "move", "mut", "pub", "ref", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where"], 
+        keywords: &["as", "const", "crate", "enum" , "extern", "false", "fn", "impl", "let", "mod", "move", "mut", "pub", "ref", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "'static"], 
         flow_keywords: &["break", "continue", "else", "for", "if", "in", "loop", "match", "return", "while"],
         common_types: &["u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128", "usize", "isize", "str", "bool", "String", "Vec"],
         ln_comment: Some("//"),
