@@ -1,3 +1,4 @@
+use std::ops::RangeBounds;
 use std::path::Path;
 use std::cmp;
 use std::fs::File;
@@ -370,13 +371,10 @@ impl Screen {
     fn incremental_search(&mut self, query: String, ke: KeyEvent) {
         let editor = &mut self.editor;
 
-        // Remove the highlight when going to a different selection or ending search
+        // Rehighlight when going to a different selection or ending search
         if let LastMatch::RowIndex(l) = editor.last_match() {
-            for hl in editor.get_buf_mut().rows_mut()[l].hl_mut() {
-                if let &mut Highlight::Search = hl {
-                    *hl = Highlight::Normal;
-                }
-            }
+            let syntax = editor.get_buf().syntax();
+            editor.get_buf_mut().rows_mut()[l].update_highlight(syntax);
         }
 
         match ke {
@@ -421,6 +419,7 @@ impl Screen {
 
         for _ in editor.get_buf().rows() {
             current_line += if editor.is_search_forward() { 1 } else { -1 };
+
             if current_line == -1 {
                 current_line = (editor.get_buf().num_rows() - 1) as isize;
             } else if current_line == editor.get_buf().num_rows() as isize {
@@ -429,7 +428,7 @@ impl Screen {
     
             let row = &editor.get_buf().rows()[current_line.abs() as usize];
             let found_at = row.render().find(&query);
-    
+
             if let Some(idx) = found_at {
                 (*editor.last_match_mut()) = if current_line == -1 {
                     LastMatch::MinusOne
