@@ -123,36 +123,6 @@ impl TextBuffer {
         self.rows.remove(moving_i);
     }
 
-    pub fn do_for<F>(&mut self, mut start_pos: Pos, mut end_pos: Pos, mut f: F) 
-    where 
-        F: FnMut(&mut Self, Pos)
-    {
-        if start_pos.y() > end_pos.y() || 
-           start_pos.y() == end_pos.y() && start_pos.x() > end_pos.y() 
-        {
-            mem::swap(&mut start_pos, &mut end_pos);
-        }
-
-        for y in start_pos.y()..=end_pos.y() {
-            let mut x = if y == start_pos.y() {
-                start_pos.x()
-            } else {
-                0
-            };
-            let end = if y == end_pos.y() {
-                end_pos.x()
-            } else {
-                self.rows[y].rsize()
-            };
-            
-            while x < end {
-                f(self, pos!(x, y));
-
-                x += 1;
-            }
-        }
-    }
-
     pub fn rows(&self) -> &Vec<Row> {
         &self.rows
     }
@@ -576,6 +546,15 @@ impl Row {
                (ch == '.' && prev_hl == Highlight::Number) 
             {
                 self.hl.push(Highlight::Number);
+
+                is_prev_sep = false;
+                next = chars.next();
+                continue;
+            }
+
+            // Highlight Identifiers 
+            if (is_prev_sep || prev_hl == Highlight::Ident) && !is_sep(ch) {
+                self.hl.push(Highlight::Ident);
 
                 is_prev_sep = false;
                 next = chars.next();

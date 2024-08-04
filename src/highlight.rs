@@ -11,6 +11,7 @@ pub enum Highlight {
     Keyword,
     Flowword,
     Type,
+    Ident,
     Search,
     Select
 }
@@ -25,6 +26,7 @@ impl Highlight {
             Self::Keyword   => Style::from_fg(Rgb(86, 156, 214)),
             Self::Flowword  => Style::from_fg(Rgb(197, 134, 192)),
             Self::Type      => Style::from_fg(Rgb(78, 201, 176)),
+            Self::Ident     => Style::from_fg(Rgb(156, 220, 254)),
             Self::Search    => Style::from_bg(Rgb(0, 0, 250)),
             Self::Select    => Style::new(Rgb(12, 12, 12), Rgb(255, 255, 255), FontStyle::default())
             // Todo: have Themes with values like fg, inverted_fg, etc.
