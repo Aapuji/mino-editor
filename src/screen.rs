@@ -1,4 +1,3 @@
-use std::ops::RangeBounds;
 use std::path::Path;
 use std::cmp;
 use std::fs::File;
@@ -12,16 +11,16 @@ use crossterm::{
     QueueableCommand
 };
 
+use crate::{MINO_VER, pos};
 use crate::config::{Config, CursorStyle};
 use crate::highlight::Highlight;
 use crate::lang::Syntax;
-use crate::MINO_VER;
 use crate::cleanup::CleanUp;
 use crate::buffer::{Row, TextBuffer};
 use crate::editor::{Editor, LastMatch};
 use crate::error::{self, Error};
 use crate::status::Status;
-use crate::util::{AsU16, IntLen};
+use crate::util::{AsU16, IntLen, Pos};
 
 #[derive(Debug)]
 pub struct Screen {
@@ -655,6 +654,8 @@ impl Screen {
         match key {
             KeyCode::Up     => if self.cy != 0 {
                 self.cy -= 1;
+            } else {
+                self.cx = 0;
             },
             KeyCode::Left   => if self.cx != 0 {
                 self.cx -= 1;
@@ -662,8 +663,12 @@ impl Screen {
                 self.cy -= 1;
                 self.cx = self.get_row().size();
             },
-            KeyCode::Down   => if buf.num_rows() > 0 && self.cy < buf.num_rows() - 1 {
-                self.cy += 1;
+            KeyCode::Down   => if buf.num_rows() > 0 {
+                if self.cy < buf.num_rows() - 1 {
+                    self.cy += 1;
+                } else if self.cy == buf.num_rows() - 1 {
+                    self.cx = self.get_row().rsize();
+                }
             },
             KeyCode::Right  => if row.is_some() {
                 if self.cx < row.unwrap().size() {
@@ -882,7 +887,29 @@ impl Screen {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
+                if self.editor.get_buf().is_in_select_mode() {
+                    self.exit_select_mode()
+                }
+
                 self.move_cursor(key.code)?;
+            }
+
+            // Select & Move (SHIFT + arrows)
+            KeyEvent { 
+                code: KeyCode::Up   |
+                    KeyCode::Down   |
+                    KeyCode::Left   |
+                    KeyCode::Right, 
+                modifiers: KeyModifiers::SHIFT, 
+                ..
+            } => {
+                if !self.editor.get_buf().is_in_select_mode() {
+                    self.enter_select_mode();
+                }   
+
+                self.move_cursor(key.code)?;
+
+                self.select();
             }
 
             // Page Up/Page Down
@@ -929,9 +956,9 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.editor.get_buf_mut().set_cursor_pos((self.cx, self.cy));
+                self.editor.get_buf_mut().set_cursor_pos(Pos::from((self.cx, self.cy)));
                 self.editor.next_buf();
-                (self.cx, self.cy) = self.editor.get_buf().saved_cursor_pos();
+                (self.cx, self.cy) = self.editor.get_buf().saved_cursor_pos().into();
             }
 
             // Enter (make new line)
@@ -978,12 +1005,11 @@ impl Screen {
 
             // CTRL+SHIFT+/ or CTRL+? (show keybinds)
             KeyEvent { 
-                code: KeyCode::Char('/'), 
+                code: KeyCode::Char('/') | KeyCode::Char('?'), 
                 modifiers: m, 
                 .. 
             } if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
-                println!("CTRL+?");
-                panic!();
+                // TODO
             }
             
             KeyEvent {
@@ -991,8 +1017,7 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                // println!("CTRL+?");
-                // panic!(); 
+                // TODO
             }
 
             // Tab (insert tab)
@@ -1027,6 +1052,107 @@ impl Screen {
         self.editor.set_close_times(config.close_times());
 
         Ok(self)
+    }
+
+    pub fn enter_select_mode(&mut self) {
+        self.editor.get_buf_mut().set_anchor(Some(pos!(self)));
+        self.editor.get_buf_mut().enter_select_mode();
+    }
+
+    pub fn exit_select_mode(&mut self) {
+        let anchor_y = if let Some(anchor) = self.editor.get_buf().select_anchor() {
+            anchor.y()
+        } else {
+            self.editor.get_buf_mut().exit_select_mode();
+            return;
+        };
+        let cpos_y = pos!(self).y();
+
+        let syntax = self.editor.get_buf().syntax();
+        for y in 
+            cmp::min(anchor_y, cpos_y)..=
+            cmp::max(anchor_y, cpos_y)
+        {
+            self.editor.get_buf_mut().rows_mut()[y].update_highlight(syntax);
+        }
+
+        self.editor.get_buf_mut().exit_select_mode();
+    }
+
+    pub fn select(&mut self) {
+        let anchor = if let Some(a) = self.editor.get_buf().select_anchor() {
+            *a
+        } else {
+            return;
+        };
+        let cpos = pos!(self);
+
+        // Equal (shouldn't happen?)
+        if anchor == cpos {
+            return;
+        }
+
+        // Same line
+        if anchor.y() == cpos.y() {
+            let start;
+            let end;
+            
+            // anchor ... cursor
+            if anchor < cpos {
+                start = anchor.x();
+                end = cpos.x();
+            // cursor ... anchor
+            } else {
+                start = cpos.x();
+                end = anchor.x();
+            }
+
+            let hl = self.get_row_mut().hl_mut();
+
+            for i in start..end {
+                hl[i] = Highlight::Select;
+            }
+        // Anchor then cursor
+        } else if anchor.y() < cpos.y() {
+            // anchor .. \n
+            let row = &mut self.editor.get_buf_mut().rows_mut()[anchor.y()];
+            for i in anchor.x()..row.rsize() {
+                row.hl_mut()[i] = Highlight::Select;
+            }
+
+            // ... \n ... \n
+            for y in anchor.y()+1..cpos.y() {
+                let hl = self.editor.get_buf_mut().rows_mut()[y].hl_mut();
+
+                hl.fill(Highlight::Select);
+            }
+
+            // \n .. cursor
+            let row = &mut self.editor.get_buf_mut().rows_mut()[cpos.y()];
+            for i in 0..cpos.x() {
+                row.hl_mut()[i] = Highlight::Select;
+            }
+        // Cursor then anchor
+        } else if anchor.y() > cpos.y() {
+            // cursor .. \n
+            let row = &mut self.editor.get_buf_mut().rows_mut()[cpos.y()];
+            for i in cpos.x()..row.rsize() {
+                row.hl_mut()[i] = Highlight::Select;
+            }
+
+            // ... \n ... \n
+            for y in cpos.y()+1..anchor.y() {
+                let hl = self.editor.get_buf_mut().rows_mut()[y].hl_mut();
+
+                hl.fill(Highlight::Select);
+            }
+
+            // \n .. anchor
+            let row = &mut self.editor.get_buf_mut().rows_mut()[anchor.y()];
+            for i in 0..anchor.x() {
+                row.hl_mut()[i] = Highlight::Select;
+            }
+        }
     }
 
     /// Renames current buffer. 

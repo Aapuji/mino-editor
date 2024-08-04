@@ -1,5 +1,6 @@
 use std::ffi::OsStr;
 use std::fs;
+use std::mem;
 use std::ops;
 use std::path::Path;
 
@@ -8,7 +9,9 @@ use crate::config::Config;
 use crate::error::{self, Error};
 use crate::highlight::Highlight;
 use crate::lang::{self, is_sep, Language, Syntax};
+use crate::pos;
 use crate::style::Style;
+use crate::util::Pos;
 
 /// Holds the text buffer that will be displayed in the editor.
 #[derive(Debug)]
@@ -17,7 +20,9 @@ pub struct TextBuffer {
     num_rows: usize,
     file_name: String,
     is_dirty: bool,
-    saved_cursor_pos: (usize, usize),
+    saved_cursor_pos: Pos,
+    select_anchor: Option<Pos>,
+    in_select_mode: bool,
     syntax: &'static Syntax
 }
 
@@ -29,7 +34,9 @@ impl TextBuffer {
             num_rows: 0,
             file_name: String::new(),
             is_dirty: false,
-            saved_cursor_pos: (0, 0),
+            saved_cursor_pos: Pos::from((0usize, 0usize)),
+            select_anchor: None,
+            in_select_mode: false,
             syntax: Syntax::UNKNOWN
         }
     }
@@ -116,6 +123,36 @@ impl TextBuffer {
         self.rows.remove(moving_i);
     }
 
+    pub fn do_for<F>(&mut self, mut start_pos: Pos, mut end_pos: Pos, mut f: F) 
+    where 
+        F: FnMut(&mut Self, Pos)
+    {
+        if start_pos.y() > end_pos.y() || 
+           start_pos.y() == end_pos.y() && start_pos.x() > end_pos.y() 
+        {
+            mem::swap(&mut start_pos, &mut end_pos);
+        }
+
+        for y in start_pos.y()..=end_pos.y() {
+            let mut x = if y == start_pos.y() {
+                start_pos.x()
+            } else {
+                0
+            };
+            let end = if y == end_pos.y() {
+                end_pos.x()
+            } else {
+                self.rows[y].rsize()
+            };
+            
+            while x < end {
+                f(self, pos!(x, y));
+
+                x += 1;
+            }
+        }
+    }
+
     pub fn rows(&self) -> &Vec<Row> {
         &self.rows
     }
@@ -158,12 +195,33 @@ impl TextBuffer {
         self.is_dirty = false;
     }
 
-    pub fn saved_cursor_pos(&self) -> (usize, usize) {
+    pub fn saved_cursor_pos(&self) -> Pos {
         self.saved_cursor_pos
     }
 
-    pub fn set_cursor_pos(&mut self, pos: (usize, usize)) {
+    pub fn set_cursor_pos(&mut self, pos: Pos) {
         self.saved_cursor_pos = pos;
+    }
+
+    pub fn select_anchor(&self) -> &Option<Pos> {
+        &self.select_anchor
+    }
+
+    pub fn set_anchor(&mut self, anchor: Option<Pos>) {
+        self.select_anchor = anchor;
+    }
+
+    pub fn is_in_select_mode(&self) -> bool {
+        self.in_select_mode
+    }
+
+    pub fn enter_select_mode(&mut self) {
+        self.in_select_mode = true;
+    }
+
+    pub fn exit_select_mode(&mut self) {
+        self.in_select_mode = false;
+        self.select_anchor = None;
     }
 
     pub fn syntax(&self) -> &'static Syntax {
