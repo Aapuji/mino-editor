@@ -561,6 +561,31 @@ impl Row {
                 continue;
             }
 
+            if let Highlight::Ident | 
+                Highlight::Type     | 
+                Highlight::Flowword | 
+                Highlight::Keyword  = prev_hl {
+                if ch == '(' {
+                    let mut j = 1;
+                    while j <= i {
+                        let hl = &self.hl[i - j];
+
+                        if let Highlight::Ident | 
+                            Highlight::Type     | 
+                            Highlight::Flowword | 
+                            Highlight::Keyword  = hl {
+                            
+                            self.hl[i - j] = Highlight::Function;
+
+                            j += 1; 
+                            continue;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            } 
+
             self.hl.push(Highlight::default());
             is_prev_sep = lang::is_sep(ch);
             next = chars.next();
