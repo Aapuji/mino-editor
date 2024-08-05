@@ -561,19 +561,14 @@ impl Row {
                 continue;
             }
 
-            if let Highlight::Ident | 
-                Highlight::Type     | 
-                Highlight::Flowword | 
-                Highlight::Keyword  = prev_hl {
+            // Highlight Function
+            if let Highlight::Ident = prev_hl {
                 if ch == '(' {
                     let mut j = 1;
                     while j <= i {
                         let hl = &self.hl[i - j];
 
-                        if let Highlight::Ident | 
-                            Highlight::Type     | 
-                            Highlight::Flowword | 
-                            Highlight::Keyword  = hl {
+                        if let Highlight::Ident = hl {
                             
                             self.hl[i - j] = Highlight::Function;
 
