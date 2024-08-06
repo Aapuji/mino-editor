@@ -511,8 +511,7 @@ impl Row {
             }
 
             // Highlight Strings
-            if checkflags!(HIGHLIGHT_STRINGS in syntax.flags())
-            {
+            if checkflags!(HIGHLIGHT_STRINGS in syntax.flags()) {
                 if let Some(delim) = quote {
                     self.hl.push(Highlight::String);
 
@@ -520,7 +519,7 @@ impl Row {
                     if ch == '\\' && i + 1 < self.rsize {
                         self.hl.push(Highlight::String);                                // <-- HERE
                         chars.next(); // Throw away next value, as it was already highlighted (^^^^)
-                        next = chars.next(); // TODO: Make advance fn to do this, perhaps in Highlight iterator?
+                        next = chars.next();
                         continue;
                     }
 

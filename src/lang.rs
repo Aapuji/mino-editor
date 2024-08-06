@@ -53,8 +53,7 @@ bitflags! {
     pub struct SyntaxFlags: u8 {
         const HIGHLIGHT_NUMBERS = 0b0000_0001;  // Whether to highlight numbers
         const HIGHLIGHT_STRINGS = 0b0000_0010;  // Whether to highlight strings
-        const SINGLE_CHAR_LIT   = 0b0000_0100;  // Whether to restrict '' literals to one char long
-        const NESTED_COMMENTS   = 0b0000_1000;  // Whether to allow nested multiline comments
+        const NESTED_COMMENTS   = 0b0000_0100;  // Whether to allow nested multiline comments
         const NONE              = 0b0000_0000;
     }
 }
@@ -81,7 +80,7 @@ impl Syntax {
         multi_comment: Some(("/*", "*/")),
         flags: bitexpr! {
             HIGHLIGHT_NUMBERS | 
-            HIGHLIGHT_STRINGS | SINGLE_CHAR_LIT
+            HIGHLIGHT_STRINGS
         }
     };
 
@@ -94,7 +93,7 @@ impl Syntax {
         multi_comment: Some(("/*", "*/")),
         flags: bitexpr! {
             HIGHLIGHT_NUMBERS | 
-            HIGHLIGHT_STRINGS | SINGLE_CHAR_LIT |
+            HIGHLIGHT_STRINGS |
             NESTED_COMMENTS
         }
     };
