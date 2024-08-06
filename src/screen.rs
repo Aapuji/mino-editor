@@ -13,7 +13,7 @@ use crossterm::{
 
 use crate::{MINO_VER, pos};
 use crate::config::{Config, CursorStyle};
-use crate::highlight::Highlight;
+use crate::highlight::{Highlight, SelectHighlight};
 use crate::lang::Syntax;
 use crate::cleanup::CleanUp;
 use crate::buffer::{Row, TextBuffer};
@@ -440,7 +440,7 @@ impl Screen {
 
                 let row = &mut editor.get_buf_mut().rows_mut()[current_line.abs() as usize];
                 for i in 0..query.len() {
-                    row.hl_mut()[self.cx + i] = Highlight::Search;
+                    row.hl_mut()[self.cx + i].set_select_hl(SelectHighlight::Search);
                 }
 
                 break;
@@ -642,7 +642,7 @@ impl Screen {
         Ok(())
     }
 
-    pub fn move_cursor(&mut self, key: KeyCode) -> error::Result<()> {
+    pub fn move_cursor(&mut self, key: KeyCode) {
         let buf = self.editor.get_buf();
 
         let row = if self.cy >= buf.num_rows() {
@@ -651,12 +651,14 @@ impl Screen {
             Some(self.get_row())
         };
 
+        let in_selection_mode = buf.is_in_select_mode();
+
         match key {
             KeyCode::Up     => if self.cy != 0 {
                 self.cy -= 1;
             } else {
                 self.cx = 0;
-            },
+            }
             KeyCode::Left   => if self.cx != 0 {
                 self.cx -= 1;
             } else if self.cy != 0 {
@@ -681,6 +683,8 @@ impl Screen {
             _               => ()
         };
 
+        let buf = self.editor.get_buf();
+
         // Cursor jump back to end of line when going from longer line to shorter one
         let row = if self.cy >= buf.num_rows() {
             None
@@ -697,8 +701,61 @@ impl Screen {
         if self.cx > len {
             self.cx = len;
         }
+    }
 
-        Ok(())
+    pub fn move_cursor_select(&mut self, key: KeyCode) {
+        let anchor = self.editor.get_buf().select_anchor().unwrap();
+        let cpos = pos!(self);
+        
+        let front = cmp::min(anchor, cpos);
+        let back = cmp::max(anchor, cpos);
+
+        self.exit_select_mode();
+
+        let buf = self.editor.get_buf();
+
+        match key {
+            KeyCode::Up     => {
+                self.cx = front.x();
+                self.cy = front.y();
+                if self.cy > 0 {
+                    self.cy -= 1;
+                }
+            }
+            KeyCode::Left   => {
+                self.cx = front.x();
+                self.cy = front.y();
+            }
+            KeyCode::Down   => {
+                self.cx = back.x();
+                self.cy = back.y();
+                if self.cy < buf.num_rows() - 1 {
+                    self.cy += 1;
+                }
+            }
+            KeyCode::Right  => {
+                self.cx = back.x();
+                self.cy = back.y()
+            }
+            _               => ()
+        };
+
+        // Cursor jump back to end of line when going from longer line to shorter one
+        let row = if self.cy >= buf.num_rows() {
+            None
+        } else {
+            Some(self.get_row())
+        };
+
+        let len = if let Some(r) = row {
+            r.rsize()
+        } else {
+            0
+        };
+
+        if self.cx > len {
+            self.cx = len;
+        }
     }
 
     /// Processes the given `&KeyEvent`.
@@ -888,10 +945,10 @@ impl Screen {
                 ..
             } => {
                 if self.editor.get_buf().is_in_select_mode() {
-                    self.exit_select_mode()
+                    self.move_cursor_select(key.code);
+                } else {
+                    self.move_cursor(key.code);
                 }
-
-                self.move_cursor(key.code)?;
             }
 
             // Select & Move (SHIFT + arrows)
@@ -907,7 +964,7 @@ impl Screen {
                     self.enter_select_mode();
                 }   
 
-                self.move_cursor(key.code)?;
+                self.move_cursor(key.code);
 
                 self.select();
             }
@@ -933,7 +990,7 @@ impl Screen {
                         KeyCode::Up
                     } else {
                         KeyCode::Down
-                    })?;
+                    });
                 }
             }
 
@@ -1110,47 +1167,51 @@ impl Screen {
             let hl = self.get_row_mut().hl_mut();
 
             for i in start..end {
-                hl[i] = Highlight::Select;
+                hl[i].set_select_hl(SelectHighlight::Select);
             }
         // Anchor then cursor
         } else if anchor.y() < cpos.y() {
             // anchor .. \n
             let row = &mut self.editor.get_buf_mut().rows_mut()[anchor.y()];
             for i in anchor.x()..row.rsize() {
-                row.hl_mut()[i] = Highlight::Select;
+                row.hl_mut()[i].set_select_hl(SelectHighlight::Select);
             }
 
             // ... \n ... \n
             for y in anchor.y()+1..cpos.y() {
-                let hl = self.editor.get_buf_mut().rows_mut()[y].hl_mut();
+                let hls = self.editor.get_buf_mut().rows_mut()[y].hl_mut();
 
-                hl.fill(Highlight::Select);
+                for hl in hls {
+                    hl.set_select_hl(SelectHighlight::Select);
+                }
             }
 
             // \n .. cursor
             let row = &mut self.editor.get_buf_mut().rows_mut()[cpos.y()];
             for i in 0..cpos.x() {
-                row.hl_mut()[i] = Highlight::Select;
+                row.hl_mut()[i].set_select_hl(SelectHighlight::Select);
             }
         // Cursor then anchor
         } else if anchor.y() > cpos.y() {
             // cursor .. \n
             let row = &mut self.editor.get_buf_mut().rows_mut()[cpos.y()];
             for i in cpos.x()..row.rsize() {
-                row.hl_mut()[i] = Highlight::Select;
+                row.hl_mut()[i].set_select_hl(SelectHighlight::Select);
             }
 
             // ... \n ... \n
             for y in cpos.y()+1..anchor.y() {
-                let hl = self.editor.get_buf_mut().rows_mut()[y].hl_mut();
+                let hls = self.editor.get_buf_mut().rows_mut()[y].hl_mut();
 
-                hl.fill(Highlight::Select);
+                for hl in hls {
+                    hl.set_select_hl(SelectHighlight::Select);
+                }
             }
 
             // \n .. anchor
             let row = &mut self.editor.get_buf_mut().rows_mut()[anchor.y()];
             for i in 0..anchor.x() {
-                row.hl_mut()[i] = Highlight::Select;
+                row.hl_mut()[i].set_select_hl(SelectHighlight::Select);
             }
         }
     }

@@ -8,6 +8,7 @@ use crate::checkflags;
 use crate::config::Config;
 use crate::error::{self, Error};
 use crate::highlight::Highlight;
+use crate::highlight::SyntaxHighlight;
 use crate::lang::{self, is_sep, Language, Syntax};
 use crate::pos;
 use crate::style::Style;
@@ -370,7 +371,7 @@ impl Row {
                 if quote.is_none() &&
                     ln_comment == self.rchars_at(i..i+ln_comment.len())
                 {
-                    self.hl.append(&mut vec![Highlight::Comment; self.rsize - self.hl.len()]);
+                    self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Comment); self.rsize - self.hl.len()]);
                     break;
                 }
             }
@@ -383,7 +384,7 @@ impl Row {
 
                     if mc_start == self.rchars_at(i..i+start_len) {
                         for _ in 0..start_len {
-                            self.hl.push(Highlight::Comment);
+                            self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::Comment));
                             next = chars.next();
                         }
 
@@ -392,11 +393,11 @@ impl Row {
                     }
 
                     if nested_comments > 0 {
-                        self.hl.push(Highlight::Comment);
+                        self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::Comment));
 
                         if mc_end == self.rchars_at(i..i+end_len) {
                             for _ in 0..end_len-1 {
-                                self.hl.push(Highlight::Comment);
+                                self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::Comment));
                                 chars.next();
                             }
                             next = chars.next();
@@ -426,7 +427,7 @@ impl Row {
                             (self.rsize == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
-                            self.hl.append(&mut vec![Highlight::Keyword; len]);
+                            self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Keyword); len]);
 
                             for _ in 0..len {
                                 next = chars.next();
@@ -457,7 +458,7 @@ impl Row {
                             (self.rsize == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
-                            self.hl.append(&mut vec![Highlight::Flowword; len]);
+                            self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Flowword); len]);
 
                             for _ in 0..len {
                                 next = chars.next();
@@ -488,7 +489,7 @@ impl Row {
                             (self.rsize == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
-                            self.hl.append(&mut vec![Highlight::Type; len]);
+                            self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Type); len]);
 
                             for _ in 0..len {
                                 next = chars.next();
@@ -513,12 +514,12 @@ impl Row {
             // Highlight Strings
             if checkflags!(HIGHLIGHT_STRINGS in syntax.flags()) {
                 if let Some(delim) = quote {
-                    self.hl.push(Highlight::String);
+                    self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::String));
 
                     // Escape character
                     if ch == '\\' && i + 1 < self.rsize {
-                        self.hl.push(Highlight::String);                                // <-- HERE
-                        chars.next(); // Throw away next value, as it was already highlighted (^^^^)
+                        self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::String));
+                        chars.next();
                         next = chars.next();
                         continue;
                     }
@@ -532,7 +533,7 @@ impl Row {
                     continue;
                 } else if ch == '"' || ch == '\'' {
                     quote = Some(ch);
-                    self.hl.push(Highlight::String);
+                    self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::String));
                     next = chars.next();
                     continue;
                 }
@@ -541,10 +542,10 @@ impl Row {
             // Highlight Number
             if checkflags!(HIGHLIGHT_NUMBERS in syntax.flags()) &&
                 ch.is_digit(10) && 
-               (is_prev_sep || prev_hl == Highlight::Number) ||
-               (ch == '.' && prev_hl == Highlight::Number) 
+               (is_prev_sep || prev_hl.syntax_hl() == SyntaxHighlight::Number) ||
+               (ch == '.' && prev_hl.syntax_hl() == SyntaxHighlight::Number) 
             {
-                self.hl.push(Highlight::Number);
+                self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::Number));
 
                 is_prev_sep = false;
                 next = chars.next();
@@ -552,8 +553,8 @@ impl Row {
             }
 
             // Highlight Identifiers 
-            if (is_prev_sep || prev_hl == Highlight::Ident) && !is_sep(ch) {
-                self.hl.push(Highlight::Ident);
+            if (is_prev_sep || prev_hl.syntax_hl() == SyntaxHighlight::Ident) && !is_sep(ch) {
+                self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::Ident));
 
                 is_prev_sep = false;
                 next = chars.next();
@@ -561,15 +562,15 @@ impl Row {
             }
 
             // Highlight Function
-            if let Highlight::Ident = prev_hl {
+            if prev_hl.syntax_hl() == SyntaxHighlight::Ident {
                 if ch == '(' {
                     let mut j = 1;
                     while j <= i {
                         let hl = &self.hl[i - j];
 
-                        if let Highlight::Ident = hl {
+                        if hl.syntax_hl() == SyntaxHighlight::Ident {
                             
-                            self.hl[i - j] = Highlight::Function;
+                            self.hl[i - j] = Highlight::from_syntax_hl(SyntaxHighlight::Function);
 
                             j += 1; 
                             continue;
@@ -581,7 +582,7 @@ impl Row {
             } 
 
             self.hl.push(Highlight::default());
-            is_prev_sep = lang::is_sep(ch);
+            is_prev_sep = is_sep(ch);
             next = chars.next();
         }
     }
