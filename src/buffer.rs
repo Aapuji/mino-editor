@@ -278,7 +278,7 @@ impl Row {
             prev_hl = Some(hl);
         }
 
-        s + Style::RESET
+        format!("{}{}", s, Style::default())
     }
 
     /// Gets the chars at the given `range` of `str`. If any values of the range go out of bounds of the row's text, they are not used, so that it will not fail. If the range is entirely out of bounds, then all chars will not be used, returning an empty `&str`.
@@ -328,7 +328,7 @@ impl Row {
 
     /// Updates the `render` and `rsize` properties to align with the `chars` property.
     pub fn update(&mut self, config: Config, syntax: &'static Syntax) {
-        let mut render = String::new();
+        let mut render = String::with_capacity(self.size);
 
 		self.has_tabs = false;
         for ch in self.chars.chars() {

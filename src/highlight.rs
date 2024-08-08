@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::style::{FontStyle, Rgb, Style};
+use crate::style::{Rgb, Style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Highlight {
@@ -29,25 +29,25 @@ pub enum SelectHighlight {
 }
 
 impl Highlight {
-    pub fn to_style(self) -> Style {
+    pub fn to_style(&self) -> Style {
         let mut style = Style::default();
 
         match self.syntax {
-            SyntaxHighlight::Normal     => (),
-            SyntaxHighlight::Number     => style.set_fg(Rgb(181, 206, 168)),
-            SyntaxHighlight::String     => style.set_fg(Rgb(206, 145, 120)),
-            SyntaxHighlight::Comment    => style.set_fg(Rgb(106, 153, 85)),
-            SyntaxHighlight::Keyword    => style.set_fg(Rgb(86, 156, 214)),
-            SyntaxHighlight::Flowword   => style.set_fg(Rgb(197, 134, 192)),
-            SyntaxHighlight::Type       => style.set_fg(Rgb(78, 201, 176)),
-            SyntaxHighlight::Ident      => style.set_fg(Rgb(156, 220, 254)),
-            SyntaxHighlight::Function   => style.set_fg(Rgb(220, 220, 170))
+            SyntaxHighlight::Normal     => style.set_fg(None),
+            SyntaxHighlight::Number     => style.set_fg(Some(Rgb(181, 206, 168))),
+            SyntaxHighlight::String     => style.set_fg(Some(Rgb(206, 145, 120))),
+            SyntaxHighlight::Comment    => style.set_fg(Some(Rgb(106, 153, 85))),
+            SyntaxHighlight::Keyword    => style.set_fg(Some(Rgb(86, 156, 214))),
+            SyntaxHighlight::Flowword   => style.set_fg(Some(Rgb(197, 134, 192))),
+            SyntaxHighlight::Type       => style.set_fg(Some(Rgb(78, 201, 176))),
+            SyntaxHighlight::Ident      => style.set_fg(Some(Rgb(156, 220, 254))),
+            SyntaxHighlight::Function   => style.set_fg(Some(Rgb(220, 220, 170)))
         };
 
         match self.select {
             SelectHighlight::Normal => (),
-            SelectHighlight::Search => style.set_bg(Rgb(0, 0, 250)),
-            SelectHighlight::Select => style.set_bg(Rgb(38,79,120))
+            SelectHighlight::Search => style.set_bg(Some(Rgb(0, 0, 250))),
+            SelectHighlight::Select => style.set_bg(Some(Rgb(38,79,120)))
         }
 
         style

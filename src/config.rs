@@ -1,6 +1,8 @@
 use std::time::Duration;
 use supports_color::Stream;
 
+use crate::theme::Theme;
+
 /// Holds configuration information that the user can change.
 /// 
 /// Implements `Copy`.
@@ -11,7 +13,8 @@ pub struct Config {
     close_times: u32,
     msg_bar_life: Duration,
     prompt_bar_cursor_style: CursorStyle,
-    color_support: ColorSupport
+    color_support: ColorSupport,
+    theme: Theme
 }
 
 impl Config {
@@ -35,6 +38,10 @@ impl Config {
         self.prompt_bar_cursor_style
     }
 
+    pub fn theme(&self) -> &Theme {
+        &self.theme
+    }
+
     pub fn color_support(&self) -> ColorSupport {
         self.color_support
     }
@@ -48,6 +55,7 @@ impl Default for Config {
             close_times: 1,
             msg_bar_life: Duration::from_secs(5),
             prompt_bar_cursor_style: CursorStyle::Regular,
+            theme: Theme::DEFAULT,
             color_support: if let Some(support) = supports_color::on(Stream::Stdout) {
                 if support.has_16m {
                     ColorSupport::RGB

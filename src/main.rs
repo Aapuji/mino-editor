@@ -9,10 +9,13 @@ mod lang;
 mod screen;
 mod status;
 mod style;
+mod theme;
 mod util;
 
 use std::env;
 use std::process;
+use crossterm::style::Print;
+use crossterm::terminal;
 use crossterm::terminal::enable_raw_mode;
 use clap::Parser;
 

@@ -1,49 +1,56 @@
 use std::fmt;
 use bitflags::bitflags;
 
+use crate::theme::Theme;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Style {
-    fg: Rgb,
-    bg: Rgb, 
-    font: FontStyle
+pub struct Style<'t> {
+    fg: Option<Rgb>,    // If none, then use the defaults according to the theme
+    bg: Option<Rgb>, 
+    font: FontStyle,
+    theme: &'t Theme
 }
 
-impl Style {
-    pub const RESET: &'static str = "\x1b[m";
+impl<'t> Style<'t> {
+    pub const RESET: &'static str       = "\x1b[0m";
+    pub const FG_RESET: &'static str    = "\x1b[39m";
+    pub const BG_RESET: &'static str    = "\x1b[49m";
 
-    pub fn new(fg: Rgb, bg: Rgb, font: FontStyle) -> Self {
-        Self { fg, bg, font }
+    pub fn new(fg: Option<Rgb>, bg: Option<Rgb>, font: FontStyle, theme: &'t Theme) -> Self {
+        Self { fg, bg, font, theme }
     }
 
     pub fn from_fg(fg: Rgb) -> Self {
         Self {
-            fg: fg,
-            bg: Self::bg_default(),
-            font: FontStyle::default()
+            fg: Some(fg),
+            bg: None,
+            font: FontStyle::default(),
+            theme: &Theme::DEFAULT
         }
     }
 
     pub fn from_bg(bg: Rgb) -> Self {
         Self {
-            fg: Self::fg_default(),
-            bg: bg,
-            font: FontStyle::default()
+            fg: None,
+            bg: Some(bg),
+            font: FontStyle::default(),
+            theme: &Theme::DEFAULT
         }
     }
 
-    pub fn fg(&self) -> &Rgb {
+    pub fn fg(&self) -> &Option<Rgb> {
         &self.fg
     }
 
-    pub fn set_fg(&mut self, fg: Rgb) {
+    pub fn set_fg(&mut self, fg: Option<Rgb>) {
         self.fg = fg;
     }
 
-    pub fn bg(&self) -> &Rgb {
+    pub fn bg(&self) -> &Option<Rgb> {
         &self.bg
     }
 
-    pub fn set_bg(&mut self, bg: Rgb) {
+    pub fn set_bg(&mut self, bg: Option<Rgb>) {
         self.bg = bg;
     }
 
@@ -55,38 +62,47 @@ impl Style {
         self.font = font;
     }
 
-    pub fn fg_default() -> Rgb {
-        Rgb(204, 204, 204)
-    }
+    pub fn fg_default() {
 
-    pub fn bg_default() -> Rgb {
-        Rgb(12, 12, 12)
     }
 }
 
-impl Default for Style {
+impl<'t> Default for Style<'t> {
     fn default() -> Self {
         Self {
-            fg: Self::fg_default(),
-            bg: Self::bg_default(),
-            font: FontStyle::default()
+            fg: None,
+            bg: None,
+            font: FontStyle::default(),
+            theme: &Theme::DEFAULT
         }
     }
 }
 
-impl fmt::Display for Style {
+impl<'t> fmt::Display for Style<'t> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // write!(f, "\x1b[{};48;2;{}38;2;{}m", self.font, self.bg, self.fg)
-        write!(f, "\x1b[{}48;2;{};38;2;{}m", self.font, self.bg, self.fg)
+        write!(f, "\x1b[{};48;2;{};38;2;{}m", 
+            self.font, 
+            if let Some(ref bg) = self.bg {
+                bg
+            } else {
+                self.theme.bg()
+            },
+            if let Some(ref fg) = self.fg {
+                fg
+            } else {
+                self.theme.fg()
+            }
+        )
     }
 }
 
-impl From<FontStyle> for Style {
+impl<'t> From<FontStyle> for Style<'t> {
     fn from(value: FontStyle) -> Self {
         Self {
-            fg: Self::fg_default(),
-            bg: Self::bg_default(),
-            font: value
+            fg: None,
+            bg: None,
+            font: value,
+            theme: &Theme::DEFAULT
         }
     }
 }

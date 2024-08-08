@@ -2,6 +2,7 @@ use std::path::Path;
 use std::cmp;
 use std::fs::File;
 use std::io::{self, Write};
+use crossterm::style::{self, Color};
 use crossterm::{
     cursor::{Hide, MoveTo, Show}, 
     event::{Event, KeyCode, KeyEvent, KeyModifiers}, 
@@ -11,9 +12,10 @@ use crossterm::{
     QueueableCommand
 };
 
+use crate::style::Style;
 use crate::{MINO_VER, pos};
 use crate::config::{Config, CursorStyle};
-use crate::highlight::{Highlight, SelectHighlight};
+use crate::highlight::SelectHighlight;
 use crate::lang::Syntax;
 use crate::cleanup::CleanUp;
 use crate::buffer::{Row, TextBuffer};
@@ -45,7 +47,7 @@ impl Screen {
 
     pub fn new() -> Self {
         let (cs, rs) = terminal::size().expect("An error occurred");
-        
+
         Self {
             stdout: io::stdout(),
             screen_rows: rs as usize - 2, // Make room for status bar and status msg area
@@ -151,6 +153,8 @@ impl Screen {
     }
 
     pub fn refresh(&mut self) -> error::Result<()> {
+        self.queue(Print("\x1b[0 q"))?;
+
         self.scroll();
 
         self.queue(Hide)?;
@@ -470,11 +474,17 @@ impl Screen {
         for y in 0..y_max {
             let file_row = y + self.row_offset;
 
+            self.queue(Print(format!("\x1b[48;2;{}m", self.config.theme().bg())))?;
+
             if file_row >= num_rows {
                 let str = if num_rows == 0 && y == self.screen_rows / 3 {
                     // Display welcome screen
                     if px != 0 {
-                        self.queue(Print("\x1b[38;5;245m~\x1b[m"))?;
+                        self.queue(Print(format!(
+                            "\x1b[38;2;{}m~{}", 
+                            self.config.theme().dimmed(),
+                            Style::FG_RESET
+                        )))?;
                         px -= 1;
                     }
 
@@ -488,7 +498,7 @@ impl Screen {
                     // Display New help
                     px += 1;
                     if px != 0 {
-                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        self.queue(Print(format!("\x1b[38;2;{}m~", self.config.theme().dimmed())))?;
                         px -= 1;
                     }
 
@@ -500,12 +510,12 @@ impl Screen {
                     let msg_len = msg.len();
 
                     msg.truncate(msg_len);
-                    format!("{msg}\x1b[m\r\n")
+                    format!("{msg}\x1b[39m\r\n")
                 } else if num_rows == 0 && y == self.screen_rows / 3 + 3 && self.screen_rows >= 16 {
                     // Display Open help
                     px += 1;
                     if px != 0 {
-                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        self.queue(Print(format!("\x1b[38;2;{}m~", self.config.theme().dimmed())))?;
                         px -= 1;
                     }
 
@@ -517,12 +527,12 @@ impl Screen {
                     let msg_len = msg.len();
 
                     msg.truncate(msg_len);
-                    format!("{msg}\x1b[m\r\n")
+                    format!("{msg}\x1b[39m\r\n")
                 } else if num_rows == 0 && y == self.screen_rows / 3 + 4 && self.screen_rows >= 16 {
                     // Display Find help
                     px += 1;
                     if px != 0 {
-                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        self.queue(Print(format!("\x1b[38;2;{}m~", self.config.theme().dimmed())))?;
                         px -= 1;
                     }
 
@@ -534,12 +544,12 @@ impl Screen {
                     let msg_len = msg.len();
 
                     msg.truncate(msg_len);
-                    format!("{msg}\x1b[m\r\n")
+                    format!("{msg}\x1b[39m\r\n")
                 } else if num_rows == 0 && y == self.screen_rows / 3 + 5 && self.screen_rows >= 16 {
                     // Display Close help
                     px += 1;
                     if px != 0 {
-                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        self.queue(Print(format!("\x1b[38;2;{}m~", self.config.theme().dimmed())))?;
                         px -= 1;
                     }
 
@@ -551,12 +561,12 @@ impl Screen {
                     let msg_len = msg.len();
 
                     msg.truncate(msg_len);
-                    format!("{msg}\x1b[m\r\n")
+                    format!("{msg}\x1b[39m\r\n")
                 } else if num_rows == 0 && y == self.screen_rows / 3 + 6 && self.screen_rows >= 16 {
                     // Display Save help
                     px += 1;
                     if px != 0 {
-                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        self.queue(Print(format!("\x1b[38;2;{}m~", self.config.theme().dimmed())))?;
                         px -= 1;
                     }
 
@@ -568,7 +578,7 @@ impl Screen {
                     let msg_len = msg.len();
 
                     msg.truncate(msg_len);
-                    format!("{msg}\x1b[m\r\n")
+                    format!("{msg}\x1b[39m\r\n")
                 } else if num_rows == 0 && y == self.screen_rows / 3 + 7 && self.screen_rows >= 16 {
                     // Display Quit help
                     px += 1;
@@ -585,12 +595,12 @@ impl Screen {
                     let msg_len: usize = msg.len();
 
                     msg.truncate(msg_len);
-                    format!("{msg}\x1b[m\r\n")
+                    format!("{msg}\x1b[39m\r\n")
                 } else if num_rows == 0 && y == self.screen_rows / 3 + 8 && self.screen_rows >= 16 {
                     // Display Keybind help
                     px += 1;
                     if px != 0 {
-                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        self.queue(Print(format!("\x1b[38;2;{}m~", self.config.theme().dimmed())))?;
                         px -= 1;
                     }
 
@@ -602,17 +612,23 @@ impl Screen {
                     let msg_len = msg.len();
 
                     msg.truncate(msg_len);
-                    format!("{msg}\x1b[m\r\n")
+                    format!("{msg}\x1b[39m\r\n")
                 } else {
-                    format!("\x1b[38;5;245m~\x1b[m\r\n")
+                    let mut s = format!("\x1b[38;2;{}m~", self.config.theme().dimmed());
+                    for _ in 0..self.screen_cols-1 {
+                        s.push(' ');
+                    }
+                    s.push_str("\x1b[39m\r\n");
+
+                    s
                 };
 
                 self.queue(Print(str))?;
             } else {
-                self.queue(Print(format!("{}{:width$}\x1b[m ", if file_row == self.cy {
-                    "\x1b[38;5;252m"
+                self.queue(Print(format!("{}{:width$}\x1b[39m ", if file_row == self.cy {
+                    format!("\x1b[38;2;{}m", self.config.theme().current_line())
                 } else {
-                    "\x1b[38;5;245m"
+                    format!("\x1b[38;2;{}m", self.config.theme().dimmed())
                 }, 1 + file_row, width=self.col_start - 1)))?;
 
                 let buf = self.editor.get_buf();
@@ -626,18 +642,27 @@ impl Screen {
                     row_size - self.col_offset
                 };
 
-                let msg = buf
-                    .rows()[file_row as usize]
+                let mut msg = buf
+                    .rows()[file_row]
                     .hlchars_at(
                         self.col_offset
                         ..self.col_offset + len
                     );
+                
+                if y == 0 {
+                    let msg_len = buf.rows()[file_row].rchars_at(self.col_offset..self.col_offset+len).len();
+
+                    for _ in msg_len..self.screen_cols - self.col_start {
+                        msg.push(' ');
+                    }
+                }
 
                 self.queue(Print(format!("{msg}\r\n")))?;
-
             }
             self.queue(Clear(ClearType::UntilNewLine))?;
         }
+
+        self.queue(Print("\x1b[m"))?;
 
         Ok(())
     }
@@ -650,8 +675,6 @@ impl Screen {
         } else {
             Some(self.get_row())
         };
-
-        let in_selection_mode = buf.is_in_select_mode();
 
         match key {
             KeyCode::Up     => if self.cy != 0 {
