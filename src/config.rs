@@ -1,12 +1,12 @@
 use std::time::Duration;
 use supports_color::Stream;
 
-use crate::theme::Theme;
+use crate::theme::{Theme, Themes};
 
 /// Holds configuration information that the user can change.
 /// 
 /// Implements `Copy`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Config {
     tab_stop: usize,
     quit_times: u32,
@@ -55,7 +55,7 @@ impl Default for Config {
             close_times: 1,
             msg_bar_life: Duration::from_secs(5),
             prompt_bar_cursor_style: CursorStyle::Regular,
-            theme: Theme::DEFAULT,
+            theme: Themes::default().theme(),
             color_support: if let Some(support) = supports_color::on(Stream::Stdout) {
                 if support.has_16m {
                     ColorSupport::RGB
@@ -73,7 +73,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorSupport {
     RGB,
     Bit256,
@@ -81,7 +81,7 @@ pub enum ColorSupport {
     None
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorStyle {
     Regular,
     BigBar

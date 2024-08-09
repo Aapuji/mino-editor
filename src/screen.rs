@@ -2,6 +2,7 @@ use std::path::Path;
 use std::cmp;
 use std::fs::File;
 use std::io::{self, Write};
+use std::rc::Rc;
 use crossterm::style::{self, Color};
 use crossterm::{
     cursor::{Hide, MoveTo, Show}, 
@@ -30,7 +31,7 @@ pub struct Screen {
     screen_rows: usize,
     screen_cols: usize,
     editor: Editor,
-    config: Config,
+    config: Rc<Config>,
     row_offset: usize,
     col_offset: usize,
     col_start: usize,
@@ -53,7 +54,7 @@ impl Screen {
             screen_rows: rs as usize - 2, // Make room for status bar and status msg area
             screen_cols: cs as usize,
             editor: Editor::new(),
-            config: Config::default(),
+            config: Rc::new(Config::default()),
             row_offset: 0,
             col_offset: 0,
             col_start: 2,   // Make room for line numbers
@@ -194,7 +195,7 @@ impl Screen {
         self.rx = self.cx;
 
         if self.cx < self.editor.get_buf().num_rows() {
-            self.rx = self.get_row().cx_to_rx(self.cx, self.config);
+            self.rx = self.get_row().cx_to_rx(self.cx, &*self.config);
         }
 
         if self.cy < self.row_offset {
@@ -439,7 +440,7 @@ impl Screen {
                     LastMatch::RowIndex(current_line as usize)
                 };
                 self.cy = current_line.abs() as usize;
-                self.cx = editor.get_buf().rows()[current_line.abs() as usize].rx_to_cx(idx, self.config);
+                self.cx = editor.get_buf().rows()[current_line.abs() as usize].rx_to_cx(idx, &*self.config);
                 self.row_offset = editor.get_buf().num_rows();    // For scrolling behavior
 
                 let row = &mut editor.get_buf_mut().rows_mut()[current_line.abs() as usize];
@@ -471,10 +472,13 @@ impl Screen {
         }
         let mut px = (self.screen_cols - welcome_len) / 2;
 
+        // self.queue(Hide)?;
+
         for y in 0..y_max {
             let file_row = y + self.row_offset;
 
             self.queue(Print(format!("\x1b[48;2;{}m", self.config.theme().bg())))?;
+            self.queue(Print(format!("\x1b[{} q", *self.config.theme().cursor() as usize)))?;
 
             if file_row >= num_rows {
                 let str = if num_rows == 0 && y == self.screen_rows / 3 {
@@ -583,7 +587,7 @@ impl Screen {
                     // Display Quit help
                     px += 1;
                     if px != 0 {
-                        self.queue(Print("\x1b[38;5;245m~"))?;
+                        self.queue(Print(format!("\x1b[38;2;{}m~", self.config.theme().dimmed())))?;
                         px -= 1;
                     }
 
@@ -625,6 +629,7 @@ impl Screen {
 
                 self.queue(Print(str))?;
             } else {
+                // self.queue(Show)?;
                 self.queue(Print(format!("{}{:width$}\x1b[39m ", if file_row == self.cy {
                     format!("\x1b[38;2;{}m", self.config.theme().current_line())
                 } else {
@@ -646,7 +651,8 @@ impl Screen {
                     .rows()[file_row]
                     .hlchars_at(
                         self.col_offset
-                        ..self.col_offset + len
+                        ..self.col_offset + len,
+                        self.config.theme()
                     );
                 
                 if y == 0 {
@@ -657,7 +663,7 @@ impl Screen {
                     }
                 }
 
-                self.queue(Print(format!("{msg}\r\n")))?;
+                self.queue(Print(format!("{msg}\x1b[22;23;24;29m\r\n")))?;
             }
             self.queue(Clear(ClearType::UntilNewLine))?;
         }
@@ -785,7 +791,7 @@ impl Screen {
     /// 
     /// Takes ownership of `self`, but returns it back out if it didn't exit the program.
     pub fn process_key_event(mut self, key: &KeyEvent) -> error::Result<Self> {
-        let config = self.config;
+        let config = Rc::clone(&self.config);
         let num_rows = self.editor.get_buf().num_rows();
         
         match *key {
@@ -860,7 +866,7 @@ impl Screen {
                     }
 
                     let mut buf = TextBuffer::new();
-                    buf.open(&text, self.config)?;
+                    buf.open(&text, &*self.config)?;
 
                     self.editor.append_buf(buf);
                     self.editor.set_current_buf(self.editor.bufs().len() - 1);
@@ -1304,13 +1310,13 @@ impl Screen {
         let buf = self.editor.get_buf();
         
         if self.cy == buf.num_rows() {
-            self.editor.append_row_to_current_buf(String::new(), self.config);
+            self.editor.append_row_to_current_buf(String::new(), &*self.config);
         }
 
         let file_col = self.cx + self.col_offset;
-        let config = self.config;
+        let config = Rc::clone(&self.config);
         let syntax = self.editor.get_buf().syntax();
-        (*self.get_row_mut()).insert_char(file_col, ch, config, syntax);
+        (*self.get_row_mut()).insert_char(file_col, ch, &*config, syntax);
 
         self.cx += 1;
         self.editor.get_buf_mut().make_dirty();
@@ -1321,9 +1327,9 @@ impl Screen {
     /// `offset = 0` for backspace, `offset = 1` for delete.
     pub fn remove_char(&mut self, offset: usize) {
         let cx = self.cx + offset;
-        let config = self.config;
+        let config = Rc::clone(&self.config);
         let syntax = self.editor.get_buf().syntax();
-        (*self.get_row_mut()).remove_char(cx - 1, config, syntax);
+        (*self.get_row_mut()).remove_char(cx - 1, &*config, syntax);
 
         self.cx -= 1;
         self.editor.get_buf_mut().make_dirty();
@@ -1333,9 +1339,9 @@ impl Screen {
         let cx = self.cx;
         let col_offset = self.col_offset;
 
-        let config = self.config;
+        let config = Rc::clone(&self.config);
         let syntax = self.editor.get_buf().syntax();
-        let row = (*self.get_row_mut()).split_row(cx + col_offset, config, syntax);
+        let row = (*self.get_row_mut()).split_row(cx + col_offset, &*config, syntax);
         let buf = self.editor.get_buf_mut();
         (*buf.rows_mut()).insert(self.cy + 1, row);
     
@@ -1356,10 +1362,10 @@ impl Screen {
         let prev_row_len = self.get_row().size();
         self.cy += 1;
     
-        let config = self.config;
+        let config = Rc::clone(&self.config);
         let buf = self.editor.get_buf_mut();
         let file_row = self.cy;
-        (*buf).merge_rows(file_row - 1, file_row, config);
+        (*buf).merge_rows(file_row - 1, file_row, &config);
     
         self.cy -= 1;
         self.cx = prev_row_len;
@@ -1374,10 +1380,10 @@ impl Screen {
             return;
         }
     
-        let config = self.config;
+        let config = Rc::clone(&self.config);
         let buf = self.editor.get_buf_mut();
         let file_row = self.cy + self.row_offset;
-        (*buf).merge_rows(file_row, file_row + 1, config);
+        (*buf).merge_rows(file_row, file_row + 1, &*config);
     
         (*buf.num_rows_mut()) -= 1;
         buf.make_dirty();
@@ -1405,12 +1411,8 @@ impl Screen {
         &mut self.editor
     }
 
-    pub fn config(&self) -> Config {
-        self.config
-    }
-
-    pub fn config_mut(&mut self) -> &mut Config {
-        &mut self.config
+    pub fn config(&self) -> &Config {
+        &*self.config
     }
 }
 

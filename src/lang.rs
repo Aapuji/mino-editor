@@ -41,6 +41,8 @@ pub struct Syntax {
     flow_keywords: &'static [&'static str],
     /// Common types (basically keywords but a different color)
     common_types: &'static [&'static str],
+    /// Keywords used for metaprogramming (eg. macros, '#include')
+    meta_keywords: &'static [&'static str], 
     ln_comment: Option<&'static str>,
     /// Format: Option<(Start, End)>
     multi_comment: Option<(&'static str, &'static str)>,
@@ -66,19 +68,22 @@ impl Syntax {
         keywords: &[],
         flow_keywords: &[],
         common_types: &[],
+        meta_keywords: &[],
         ln_comment: None,
         multi_comment: None,
-        flags: bitexpr!(NONE)
+        flags: bitexpr!(SyntaxFlags: NONE)
     };
     
     pub const C: &'static Self = &Self {
         lang: &Language::C,
         keywords: &["struct", "union", "typedef", "const", "static", "enum"],
         flow_keywords: &["switch", "if", "while", "for", "break", "continue", "return", "else", "case"],
-        common_types: &["int", "long", "double", "float", "char", "unsigned", "signed", "void"],
+        common_types: &["int", "long", "double", "float", "char", "unsigned", "signed", "void", "size_t"],
+        meta_keywords: &["#define", "#include", "#undef", "#ifdef", "#ifndef", "#if", "#elif", "#else", "#endif", "#line", "#error", "#warning", "region", "endregion", "#pragma"],
         ln_comment: Some("//"),
         multi_comment: Some(("/*", "*/")),
         flags: bitexpr! {
+            SyntaxFlags :
             HIGHLIGHT_NUMBERS | 
             HIGHLIGHT_STRINGS
         }
@@ -86,12 +91,14 @@ impl Syntax {
 
     pub const RUST: &'static Self = &Self {
         lang: &Language::Rust,
-        keywords: &["as", "const", "crate", "enum" , "extern", "false", "fn", "impl", "let", "mod", "move", "mut", "pub", "ref", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "'static"], 
+        keywords: &["as", "const", "crate", "enum" , "extern", "false", "fn", "impl", "let", "mod", "move", "mut", "pub", "ref", "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "'static", "'_"], 
         flow_keywords: &["break", "continue", "else", "for", "if", "in", "loop", "match", "return", "while"],
         common_types: &["u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128", "usize", "isize", "str", "bool", "String", "Vec"],
+        meta_keywords: &["print!", "println!", "eprint!", "eprintln!", "env!", "macro_rules!", "vec!"], // not all, just some common ones
         ln_comment: Some("//"),
         multi_comment: Some(("/*", "*/")),
-        flags: bitexpr! {
+        flags: bitexpr! { 
+            SyntaxFlags :
             HIGHLIGHT_NUMBERS | 
             HIGHLIGHT_STRINGS |
             NESTED_COMMENTS
@@ -103,9 +110,10 @@ impl Syntax {
         keywords: &[],
         flow_keywords: &[],
         common_types: &[],
+        meta_keywords: &[],
         ln_comment: Some("#"),
         multi_comment: Some((r#"""""#, r#"""""#)),
-        flags: bitexpr!(HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS)
+        flags: bitexpr!(SyntaxFlags: HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS)
     };
 
     pub const UNKNOWN: &'static Self = &Self {
@@ -145,6 +153,10 @@ impl Syntax {
 
     pub fn common_types(&self) -> &'static [&'static str] {
         self.common_types
+    }
+    
+    pub fn metawords(&self) -> &'static [&'static str] {
+        self.meta_keywords
     }
 
     pub fn ln_comment(&self) -> Option<&'static str> {

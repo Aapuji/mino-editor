@@ -1,6 +1,5 @@
 use std::ffi::OsStr;
 use std::fs;
-use std::mem;
 use std::ops;
 use std::path::Path;
 
@@ -8,10 +7,11 @@ use crate::checkflags;
 use crate::config::Config;
 use crate::error::{self, Error};
 use crate::highlight::Highlight;
+use crate::highlight::SelectHighlight;
 use crate::highlight::SyntaxHighlight;
-use crate::lang::{self, is_sep, Language, Syntax};
-use crate::pos;
+use crate::lang::{is_sep, Language, Syntax};
 use crate::style::Style;
+use crate::theme::Theme;
 use crate::util::Pos;
 
 /// Holds the text buffer that will be displayed in the editor.
@@ -43,7 +43,7 @@ impl TextBuffer {
     }
 
     /// Opens the contents of a file and turns it into the `TextBuffer`'s contents.
-    pub fn open(&mut self, path: &str, config: Config) -> error::Result<()> {
+    pub fn open(&mut self, path: &str, config: &Config) -> error::Result<()> {
         self.file_name = path.to_owned();
         if let Some(ext) = self.get_file_ext() {
             self.syntax = Syntax::select_syntax(ext);
@@ -66,8 +66,15 @@ impl TextBuffer {
 
     /// Renames the file of the current `TextBuffer`.
     pub fn rename(&mut self, path: &str) -> error::Result<()> {
+        let prev_ext = self.get_file_ext().map(str::to_owned);
         fs::rename(&self.file_name, path).map_err(Error::from)?;
         self.file_name = path.to_owned();
+        
+        if prev_ext != self.get_file_ext().map(str::to_owned) {
+            self.rows
+            .iter_mut()
+            .for_each(|r| r.update_highlight(self.syntax));
+        }
 
         Ok(())
     }
@@ -89,7 +96,7 @@ impl TextBuffer {
     }
 
     /// Appends a new row to the end of the `TextBuffer`, given the characters that compose it.
-    pub fn append(&mut self, chars: String, config: Config) {        
+    pub fn append(&mut self, chars: String, config: &Config) {        
         self.push(Row::from_chars(chars, config, self.syntax))
     }
 
@@ -114,7 +121,7 @@ impl TextBuffer {
         s
     }
     
-    pub fn merge_rows(&mut self, dest_i: usize, moving_i: usize, config: Config) {
+    pub fn merge_rows(&mut self, dest_i: usize, moving_i: usize, config: &Config) {
         let s = self.rows[moving_i].chars().to_owned();
         (*self.rows[dest_i].chars_mut()).push_str(&s);
         (*self.rows[dest_i].size_mut()) += self.rows[moving_i].size();
@@ -231,7 +238,7 @@ impl Row {
     }
 
     /// Creates a new `Row`, given its contents, and a `Config` struct to determine details.
-    pub fn from_chars(chars: String, config: Config, syntax: &'static Syntax) -> Self {
+    pub fn from_chars(chars: String, config: &Config, syntax: &'static Syntax) -> Self {
         let mut row = Row::new();
         row.chars = chars;
         row.size = row.chars.len();
@@ -257,28 +264,26 @@ impl Row {
     }
 
     /// Gets the chars at the given `range` of `self.render`, applying any highlights according to `self.hl`.
-    pub fn hlchars_at<R>(&self, range: R) -> String
+    pub fn hlchars_at<R>(&self, range: R, theme: &Theme) -> String
     where 
         R: ops::RangeBounds<usize>
     {
 
         let mut s = String::new();
-        let mut prev_hl = None;
+        let mut prev_hl = Highlight::NORMAL;
         for i in Self::index_range(&self.render, self.rsize, range) {
             let hl = &self.hl[i];
             
-            if let None = prev_hl {
-                s += &format!("{}{}", hl, &self.render[i..=i]);
-            } else if prev_hl.unwrap() == hl {
-                s += &format!("{}", &self.render[i..=i]);
+            if &prev_hl == hl {
+                s += &self.render[i..=i]
             } else {
-                s += &format!("{}{}", hl, &self.render[i..=i]);
-            }
+                s += &format!("{}{}", hl.to_style(theme), &self.render[i..=i])
+            };
 
-            prev_hl = Some(hl);
+            prev_hl = *hl;
         }
 
-        format!("{}{}", s, Style::default())
+        format!("{}{}", s, Style::default(theme))
     }
 
     /// Gets the chars at the given `range` of `str`. If any values of the range go out of bounds of the row's text, they are not used, so that it will not fail. If the range is entirely out of bounds, then all chars will not be used, returning an empty `&str`.
@@ -327,7 +332,7 @@ impl Row {
     }
 
     /// Updates the `render` and `rsize` properties to align with the `chars` property.
-    pub fn update(&mut self, config: Config, syntax: &'static Syntax) {
+    pub fn update(&mut self, config: &Config, syntax: &'static Syntax) {
         let mut render = String::with_capacity(self.size);
 
 		self.has_tabs = false;
@@ -511,6 +516,37 @@ impl Row {
                 }
             }
 
+            // Highlight Metawords
+            if is_prev_sep {
+                if quote.is_none() {
+                    for metaword in syntax.metawords() {
+                        let len = metaword.len();
+                        if *metaword == self.rchars_at(i..i+len) &&
+                            (self.rsize == i + len || 
+                            is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
+                        {
+                            self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Metaword); len]);
+
+                            for _ in 0..len {
+                                next = chars.next();
+                            }
+
+                            is_prev_sep = false;
+                            break;
+                        }
+                    }
+                }
+
+                if !is_prev_sep {
+                    if let Some((_, ch)) = next {
+                        if is_sep(ch) {
+                            is_prev_sep = true;
+                        }
+                    }
+                    continue;
+                }
+            }
+
             // Highlight Strings
             if checkflags!(HIGHLIGHT_STRINGS in syntax.flags()) {
                 if let Some(delim) = quote {
@@ -588,7 +624,7 @@ impl Row {
     }
 
     /// Inserts the given character at the given index in the row.
-    pub fn insert_char(&mut self, mut idx: usize, ch: char, config: Config, syntax: &'static Syntax) {
+    pub fn insert_char(&mut self, mut idx: usize, ch: char, config: &Config, syntax: &'static Syntax) {
         if idx > self.size {
             idx = self.size;
         }
@@ -599,7 +635,7 @@ impl Row {
     }
 
     /// Removes the character at the given index of the row.
-    pub fn remove_char(&mut self, mut idx: usize, config: Config, syntax: &'static Syntax) {
+    pub fn remove_char(&mut self, mut idx: usize, config: &Config, syntax: &'static Syntax) {
         if idx > self.size {
             idx = self.size;
         }
@@ -610,7 +646,7 @@ impl Row {
     }
 
     /// Splits the current row and returns the next row created.
-    pub fn split_row(&mut self, idx: usize, config: Config, syntax: &'static Syntax) -> Row {
+    pub fn split_row(&mut self, idx: usize, config: &Config, syntax: &'static Syntax) -> Row {
         if idx >= self.size {
             return Row::new();
         }
@@ -645,7 +681,7 @@ impl Row {
         next_row
     }
 
-    pub fn cx_to_rx(&self, cx: usize, config: Config) -> usize {
+    pub fn cx_to_rx(&self, cx: usize, config: &Config) -> usize {
         let mut rx = 0;
 
         for (i, ch) in self.chars.char_indices() {
@@ -663,7 +699,7 @@ impl Row {
         rx
     }
 
-    pub fn rx_to_cx(&self, rx: usize, config: Config) -> usize {
+    pub fn rx_to_cx(&self, rx: usize, config: &Config) -> usize {
         let mut cur_rx = 0;
     
         let mut cx = 0;

@@ -14,8 +14,6 @@ mod util;
 
 use std::env;
 use std::process;
-use crossterm::style::Print;
-use crossterm::terminal;
 use crossterm::terminal::enable_raw_mode;
 use clap::Parser;
 
@@ -49,6 +47,8 @@ fn main() {
     }
 
     let screen = screen.unwrap();
+
+    println!("\x1b]12;red");
 
     screen.run();
 }

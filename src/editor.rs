@@ -31,7 +31,7 @@ impl Editor {
         }
     }
 
-    pub fn open_from(paths: &Vec<String>, config: Config) -> error::Result<Self> {
+    pub fn open_from(paths: &Vec<String>, config: &Config) -> error::Result<Self> {
         let mut editor = Self::new();
         
         if paths.len() == 1 {
@@ -75,7 +75,7 @@ impl Editor {
         }
     }
 
-    pub fn append_row_to_current_buf(&mut self, string: String, config: Config) {
+    pub fn append_row_to_current_buf(&mut self, string: String, config: &Config) {
         let config = config;
         (*self.get_buf_mut()).append(string, config);
 

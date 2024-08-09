@@ -113,25 +113,25 @@ macro_rules! pos {
 /// Returns `u8`.
 #[macro_export]
 macro_rules! bitexpr {
-    ( $flag:ident ) => {
-        $crate::lang::SyntaxFlags::$flag.bits()
+    ( $path:ident : $flag:ident ) => {
+        $path::$flag.bits()
     };
 
-    ( $( $flag:ident )|+ ) => {
+    ( $path:ident : $( $flag:ident )|+ ) => {
         $(
-            $crate::lang::SyntaxFlags::$flag.bits()
+            $path::$flag.bits()
         )|+
     };
     
-    ( $( $flag:ident )&+ ) => {
+    ( $path:ident : $( $flag:ident )&+ ) => {
         $(
-            $crate::lang::SyntaxFlags::$flag.bits()
+            $path::$flag.bits()
         )&+
     };
 
-    ( $( $flag:ident )^+ ) => {
+    ( $path:ident : $( $flag:ident )^+ ) => {
         $(
-            $crate::lang::SyntaxFlags::$flag.bits()
+            $path::$flag.bits()
         )^+
     };
 }
