@@ -967,6 +967,27 @@ impl Screen {
                 self.find()?;
             }
 
+            // Paste (CTRL+V)
+            KeyEvent { 
+                code: KeyCode::Char('v'), 
+                modifiers: KeyModifiers::CONTROL, 
+                ..
+            } => {
+                let config = &self.config;
+            let buf = self.editor.get_buf_mut();
+            let syntax = buf.syntax();
+
+            if buf.num_rows() == 0 {
+                buf.append_row(Row::new());
+            }
+
+            Pos(self.cx, self.cy) = buf.insert_rows(pos!(self), vec![
+                Row::from_chars("<-- Start of insertion:".to_owned(), config, syntax),
+                Row::from_chars("Middle of insertion".to_owned(), config, syntax),
+                Row::from_chars("End of insertion -->".to_owned(), config, syntax)
+                ], config);
+            }
+
             // Move (arrows)
             KeyEvent {
                 code: KeyCode::Up       |
@@ -1047,7 +1068,7 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.editor.get_buf_mut().set_cursor_pos(Pos::from((self.cx, self.cy)));
+                self.editor.get_buf_mut().set_cursor_pos(Pos(self.cx, self.cy));
                 self.editor.next_buf();
                 (self.cx, self.cy) = self.editor.get_buf().saved_cursor_pos().into();
             }
@@ -1312,19 +1333,15 @@ impl Screen {
     }
 
     pub fn insert_char(&mut self, ch: char) {
-        let buf = self.editor.get_buf();
-        
-        if self.cy == buf.num_rows() {
-            self.editor.append_row_to_current_buf(String::new(), &*self.config);
+        let config = &self.config;
+        let buf = self.editor.get_buf_mut();
+        let syntax = buf.syntax();
+
+        if buf.num_rows() == 0 {
+            buf.append_row(Row::new());
         }
 
-        let file_col = self.cx + self.col_offset;
-        let config = Rc::clone(&self.config);
-        let syntax = self.editor.get_buf().syntax();
-        (*self.get_row_mut()).insert_char(file_col, ch, &*config, syntax);
-
-        self.cx += 1;
-        self.editor.get_buf_mut().make_dirty();
+        Pos(self.cx, self.cy) = buf.insert_rows(pos!(self), vec![Row::from_chars(ch.to_string(), config, syntax)], config);
     }
 
     /// Removes character at `self.cx + offset - 1`.

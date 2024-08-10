@@ -9,6 +9,7 @@ use crate::error::{self, Error};
 use crate::highlight::Highlight;
 use crate::highlight::SyntaxHighlight;
 use crate::lang::{is_sep, Language, Syntax};
+use crate::pos;
 use crate::style::Style;
 use crate::theme::Theme;
 use crate::util::Pos;
@@ -119,7 +120,78 @@ impl TextBuffer {
     
         s
     }
-    
+
+    /// Inserts the given `rows` at the given `pos`. The first row will be appended to the row `pos` is at, and the last row will be prepended to the row after the given `pos`.
+    /// 
+    /// Returns position of end of newly inserted rows.
+    /// 
+    /// Assumes the given `pos` is a valid position in the text buffer.
+    pub fn insert_rows(&mut self, pos: Pos, mut rows: Vec<Row>, config: &Config) -> Pos {
+        if rows.is_empty() {
+            return pos;
+        }
+        
+        let num_inserted = rows.len();
+        let syntax = self.syntax;
+        let mut res_pos = pos;
+
+        // First new row, inserted in same row
+        let is_last_row = self.num_rows == pos.y();
+        let row = self.row_at_mut(pos.y());
+
+        row.chars.insert_str(row.rx_to_cx(pos.x(), config), &rows[0].chars);
+        row.size += rows[0].size();
+        row.update(config, syntax);
+
+        res_pos.set_x(pos.x() + rows[0].rsize());
+
+        let last_row = if num_inserted == 1 {
+            return res_pos;
+        } else if num_inserted == 2 {
+            rows.remove(1)
+        } else {
+            // Intermediary new rows
+            rows
+                .into_iter()
+                .skip(1)
+                .enumerate()
+                .fold(Row::new(), |prev_row, (i, row)| {
+                    if i < num_inserted - 2 {
+                        self.rows.insert(pos.y() + i + 1, row);
+                        self.num_rows += 1;
+                        res_pos.set_y(res_pos.y() + 1);
+
+                        prev_row
+                    } else {
+                        row
+                    }
+                })
+        };
+
+        // Last new row, prepended to "next" og row
+        res_pos.set_x(last_row.rsize());
+        res_pos.set_y(res_pos.y() + 1);
+
+        if is_last_row {
+            self.append_row(last_row);
+        } else {
+            let row = self.row_at_mut(res_pos.y());
+            row.chars.insert_str(0, &last_row.chars); // No need for rx->cx because it's the first char
+            row.size += last_row.size();
+            row.update(config, syntax);
+        }
+
+        res_pos
+    }
+
+    pub fn remove_rows(&mut self) {
+
+    }
+
+    pub fn capture_rows(&mut self) -> &[Row] {
+        todo!()
+    }
+
     pub fn merge_rows(&mut self, dest_i: usize, moving_i: usize, config: &Config) {
         let s = self.rows[moving_i].chars().to_owned();
         (*self.rows[dest_i].chars_mut()).push_str(&s);

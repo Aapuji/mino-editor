@@ -30,7 +30,7 @@ impl IntLen for usize {
 
 /// Struct to easily represent the cursor position (as (x, y))
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Pos(usize, usize);
+pub struct Pos(pub usize, pub usize);
 
 impl Pos {
     pub fn x(&self) -> usize {
@@ -91,11 +91,11 @@ impl PartialOrd for Pos {
 /// 
 /// Example 1: 
 /// ```rust
-/// pos!(1, 4) // Same as Pos::from((1, 4))
+/// pos!(1, 4) // Same as Pos(1, 4)
 /// ```
 /// Example 2:
 /// ```rust
-/// pos!(self) // Same as Pos::from((self.cx + self.col_offset, self.cy + self.row_offset))
+/// pos!(self) // Same as Pos(self.cx + self.col_offset, self.cy + self.row_offset)
 /// ```
 #[macro_export]
 macro_rules! pos {
@@ -104,7 +104,7 @@ macro_rules! pos {
     };
 
     ($x:expr , $y:expr) => {
-        $crate::util::Pos::from(($x, $y))
+        $crate::util::Pos($x, $y)
     };
 }
 
