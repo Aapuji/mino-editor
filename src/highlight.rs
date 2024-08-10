@@ -18,6 +18,7 @@ pub enum SyntaxHighlight {
     Metaword,
     Ident,
     Function,
+    Path
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +46,7 @@ impl Highlight {
             SyntaxHighlight::Metaword   => *theme.metaword(),
             SyntaxHighlight::Ident      => *theme.ident(),
             SyntaxHighlight::Function   => *theme.function(),
+            SyntaxHighlight::Path       => *theme.path(),
         };
 
         match self.select {

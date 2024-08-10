@@ -7,7 +7,6 @@ use crate::checkflags;
 use crate::config::Config;
 use crate::error::{self, Error};
 use crate::highlight::Highlight;
-use crate::highlight::SelectHighlight;
 use crate::highlight::SyntaxHighlight;
 use crate::lang::{is_sep, Language, Syntax};
 use crate::style::Style;
@@ -590,7 +589,27 @@ impl Row {
 
             // Highlight Identifiers 
             if (is_prev_sep || prev_hl.syntax_hl() == SyntaxHighlight::Ident) && !is_sep(ch) {
-                self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::Ident));
+                // For highlighting the first letter of capitalized idents (eg. MyClass) as types
+                if checkflags!(CAPITAL_AS_TYPES in syntax.flags()) &&
+                    is_prev_sep &&
+                    ch.is_uppercase()
+                {
+                    self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::Type));
+                } else {
+                    self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::Ident));
+                }
+
+                is_prev_sep = false;
+                next = chars.next();
+                continue;
+            }
+
+            // Highlighting the rest of capitalized idents (eg. MyClass) as types
+            if checkflags!(CAPITAL_AS_TYPES in syntax.flags()) &&
+                prev_hl.syntax_hl() == SyntaxHighlight::Type &&
+                !is_sep(ch) 
+            {
+                self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::Type));
 
                 is_prev_sep = false;
                 next = chars.next();
@@ -615,7 +634,29 @@ impl Row {
                         }
                     }
                 }
-            } 
+            }
+
+            // Highlighting idents prior to `::` or other equivalents
+            if prev_hl.syntax_hl() == SyntaxHighlight::Ident {
+                for path_delim in syntax.path_delims() {
+                    if path_delim == &self.rchars_at(i..i+path_delim.len()) {
+                        let mut j = 1;
+                        while j <= i {
+                            let hl = &self.hl[i - j];
+
+                            if hl.syntax_hl() == SyntaxHighlight::Ident {
+                                
+                                self.hl[i - j] = Highlight::from_syntax_hl(SyntaxHighlight::Path);
+
+                                j += 1; 
+                                continue;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
 
             self.hl.push(Highlight::default());
             is_prev_sep = is_sep(ch);

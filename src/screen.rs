@@ -357,6 +357,10 @@ impl Screen {
         let saved_cy = self.cy;
         let saved_coloff = self.col_offset;
         let saved_rowoff = self.row_offset;
+
+        if self.editor.get_buf().is_in_select_mode() {
+            self.exit_select_mode();
+        }
         
         if let None = self.prompt( 
             "Search (Use ESC/Arrows/Enter): ", 
