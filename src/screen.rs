@@ -3,7 +3,6 @@ use std::cmp;
 use std::fs::File;
 use std::io::{self, Write};
 use std::rc::Rc;
-use crossterm::style::{self, Color};
 use crossterm::{
     cursor::{Hide, MoveTo, Show}, 
     event::{Event, KeyCode, KeyEvent, KeyModifiers}, 
@@ -993,8 +992,10 @@ impl Screen {
                     self.enter_select_mode();
                 }   
 
+                let syntax = self.editor.get_buf().syntax();
+                self.get_row_mut().update_highlight(syntax);
                 self.move_cursor(key.code);
-
+                self.get_row_mut().update_highlight(syntax);
                 self.select();
             }
 

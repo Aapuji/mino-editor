@@ -4,12 +4,13 @@ use crate::{config::CursorStyle, style::{FontStyle, Rgb, Style}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Themes {
-    VsCode,
+    VsCode,     // Darks
     Campbell,
     OceanDark,
     Forest,
     BusyBee,
-    BeachDay
+    BeachDay,   // Lights
+    GithubLight
 }
 
 impl Themes {
@@ -34,7 +35,9 @@ impl Themes {
                     common_type: Style::new(Rgb(78, 201, 176), *bg, FontStyle::default()),
                     metaword: Style::new(Rgb(197, 134, 192), *bg, FontStyle::default()),
                     ident: Style::new(Rgb(156, 220, 254), *bg, FontStyle::default()),
-                    function: Style::new(Rgb(220, 220, 170), *bg, FontStyle::default())
+                    function: Style::new(Rgb(220, 220, 170), *bg, FontStyle::default()),
+                    search: Rgb(158, 106, 3),
+                    select: Rgb(38, 79, 120)
                 }
             }
             Self::Campbell      => {
@@ -56,7 +59,9 @@ impl Themes {
                     common_type: Style::new(Rgb(78, 201, 176), *bg, FontStyle::default()),
                     metaword: Style::new(Rgb(86, 156, 214), *bg, FontStyle::default()),
                     ident: Style::new(Rgb(156, 220, 254), *bg, FontStyle::default()),
-                    function: Style::new(Rgb(220, 220, 170), *bg, FontStyle::default())
+                    function: Style::new(Rgb(220, 220, 170), *bg, FontStyle::default()),
+                    search: Rgb(0, 0, 250),
+                    select: Rgb(38, 79, 120)
                 }
             }
             Self::BusyBee       => {
@@ -79,7 +84,9 @@ impl Themes {
                     common_type: Style::new(Rgb(143, 143, 143), *bg, FontStyle::default()),
                     metaword: normal,
                     ident: normal,
-                    function: normal
+                    function: normal,
+                    search: Rgb(0, 0, 250),
+                    select: Rgb(116, 118, 34)
                 }
             }
             _ => todo!()
@@ -89,7 +96,7 @@ impl Themes {
 
 impl Default for Themes {
     fn default() -> Self {
-        Themes::BusyBee
+        Themes::VsCode
     }
 }
 
@@ -109,7 +116,9 @@ pub struct Theme {
     common_type: Style,
     metaword: Style,
     ident: Style,
-    function: Style
+    function: Style,
+    search: Rgb,        // Default search highlight color
+    select: Rgb         // Default select highlight color
 }
 
 impl Theme {
@@ -171,5 +180,13 @@ impl Theme {
 
     pub fn function(&self) -> &Style {
         &self.function
+    }
+
+    pub fn search(&self) -> &Rgb {
+        &self.search
+    }
+
+    pub fn select(&self) -> &Rgb {
+        &self.select
     }
 }

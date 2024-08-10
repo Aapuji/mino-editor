@@ -49,8 +49,8 @@ impl Highlight {
 
         match self.select {
             SelectHighlight::Normal => (),
-            SelectHighlight::Search => style.set_bg(Rgb(0, 0, 250)),
-            SelectHighlight::Select => style.set_bg(Rgb(38,79,120))
+            SelectHighlight::Search => style.set_bg(*theme.search()),
+            SelectHighlight::Select => style.set_bg(*theme.select())
         }
 
         style
