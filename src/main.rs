@@ -48,7 +48,5 @@ fn main() {
 
     let screen = screen.unwrap();
 
-    println!("\x1b]12;red");
-
     screen.run();
 }

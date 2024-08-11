@@ -35,7 +35,7 @@ impl TextBuffer {
             num_rows: 0,
             file_name: String::new(),
             is_dirty: false,
-            saved_cursor_pos: Pos::from((0usize, 0usize)),
+            saved_cursor_pos: Pos(0, 0),
             select_anchor: None,
             in_select_mode: false,
             syntax: Syntax::UNKNOWN
@@ -130,22 +130,27 @@ impl TextBuffer {
         if rows.is_empty() {
             return pos;
         }
+
+        if self.num_rows == 0 {
+            self.append_row(Row::new());
+        }
         
         let num_inserted = rows.len();
         let syntax = self.syntax;
         let mut res_pos = pos;
 
         // First new row, inserted in same row
-        let is_last_row = self.num_rows == pos.y();
+        let is_last_row = self.num_rows == pos.y() + 1;
         let row = self.row_at_mut(pos.y());
 
         row.chars.insert_str(row.rx_to_cx(pos.x(), config), &rows[0].chars);
         row.size += rows[0].size();
+        row.make_dirty();
         row.update(config, syntax);
 
         res_pos.set_x(pos.x() + rows[0].rsize());
 
-        let last_row = if num_inserted == 1 {
+        let mut last_row = if num_inserted == 1 {
             return res_pos;
         } else if num_inserted == 2 {
             rows.remove(1)
@@ -155,10 +160,16 @@ impl TextBuffer {
                 .into_iter()
                 .skip(1)
                 .enumerate()
-                .fold(Row::new(), |prev_row, (i, row)| {
+                .fold(Row::new(), |prev_row, (i, mut row)| {
                     if i < num_inserted - 2 {
-                        self.rows.insert(pos.y() + i + 1, row);
-                        self.num_rows += 1;
+                        row.make_dirty();
+
+                        if self.num_rows == res_pos.y() + 1 {
+                            self.append_row(row);
+                        } else {
+                            self.rows.insert(res_pos.y(), row);
+                        }
+
                         res_pos.set_y(res_pos.y() + 1);
 
                         prev_row
@@ -172,6 +183,8 @@ impl TextBuffer {
         res_pos.set_x(last_row.rsize());
         res_pos.set_y(res_pos.y() + 1);
 
+        last_row.make_dirty();
+
         if is_last_row {
             self.append_row(last_row);
         } else {
@@ -184,8 +197,49 @@ impl TextBuffer {
         res_pos
     }
 
-    pub fn remove_rows(&mut self) {
+    /// Removes the text & rows between the `from` and `to` positions.
+    /// 
+    /// Returns the position of the collapse point (end of removed rows).
+    /// 
+    /// Assumes positions are valid, and that `from < to`.
+    pub fn remove_rows(&mut self, from: Pos, to: Pos, config: &Config) -> Pos {
+        if from == to {
+            return from;
+        }
 
+        let syntax = self.syntax;
+
+        let from_cx = self.row_at(from.y()).rx_to_cx(from.x(), config);
+        let to_cx = self.row_at(to.y()).rx_to_cx(to.x(), config);
+
+        // Same line
+        if from.y() == to.y() {
+            self.row_at_mut(from.y()).chars_mut().replace_range(from_cx..to_cx, "");
+        // Different lines
+        } else {
+            // First line
+            self.row_at_mut(from.y()).chars_mut().replace_range(from_cx.., "");
+
+            // Intermediary lines
+            self.rows.drain(from.y()+1..to.y());
+
+            // Last line
+            let mut chars = self.row_at_mut(to.y()).chars_mut().clone();
+            chars.replace_range(..to.x(), "");
+            self.rows.remove(to.y());
+
+            let row = self.row_at_mut(from.y());
+            row.chars_mut().push_str(&chars);
+            *row.size_mut() += chars.len(); 
+            row.update(config, syntax);
+            
+            self.num_rows -= to.y() - from.y();
+        }
+
+        let syntax = self.syntax;
+        self.row_at_mut(from.y()).update(config, syntax);
+
+        from
     }
 
     pub fn capture_rows(&mut self) -> &[Row] {
@@ -237,11 +291,23 @@ impl TextBuffer {
     }
 
     pub fn make_dirty(&mut self) {
+        self.rows
+            .iter_mut()
+            .for_each(Row::make_dirty);
+
         self.is_dirty = true;
     }
 
     pub fn make_clean(&mut self) {
+        self.rows
+            .iter_mut()
+            .for_each(Row::make_clean);
+
         self.is_dirty = false;
+    }
+
+    pub fn set_is_dirty(&mut self, is_dirty: bool) {
+        self.is_dirty = is_dirty;
     }
 
     pub fn saved_cursor_pos(&self) -> Pos {
@@ -734,28 +800,6 @@ impl Row {
             is_prev_sep = is_sep(ch);
             next = chars.next();
         }
-    }
-
-    /// Inserts the given character at the given index in the row.
-    pub fn insert_char(&mut self, mut idx: usize, ch: char, config: &Config, syntax: &'static Syntax) {
-        if idx > self.size {
-            idx = self.size;
-        }
-
-        self.chars.insert(idx, ch);
-        self.size += 1;
-        self.update(config, syntax);
-    }
-
-    /// Removes the character at the given index of the row.
-    pub fn remove_char(&mut self, mut idx: usize, config: &Config, syntax: &'static Syntax) {
-        if idx > self.size {
-            idx = self.size;
-        }
-
-        self.chars.remove(idx);
-        self.size -= 1;
-        self.update(config, syntax);
     }
 
     /// Splits the current row and returns the next row created.

@@ -977,10 +977,6 @@ impl Screen {
             let buf = self.editor.get_buf_mut();
             let syntax = buf.syntax();
 
-            if buf.num_rows() == 0 {
-                buf.append_row(Row::new());
-            }
-
             Pos(self.cx, self.cy) = buf.insert_rows(pos!(self), vec![
                 Row::from_chars("<-- Start of insertion:".to_owned(), config, syntax),
                 Row::from_chars("Middle of insertion".to_owned(), config, syntax),
@@ -1070,7 +1066,7 @@ impl Screen {
             } => {
                 self.editor.get_buf_mut().set_cursor_pos(Pos(self.cx, self.cy));
                 self.editor.next_buf();
-                (self.cx, self.cy) = self.editor.get_buf().saved_cursor_pos().into();
+                Pos(self.cx, self.cy) = self.editor.get_buf().saved_cursor_pos();
             }
 
             // Enter (make new line)
@@ -1096,23 +1092,24 @@ impl Screen {
                 modifiers: KeyModifiers::NONE, 
                 ..
             } => {
-                if code == KeyCode::Backspace {
-                    if self.cy < self.editor.get_buf_mut().num_rows() {
-                        if self.cx > 0 {
-                            self.remove_char(0);
-                        } else if self.cy > 0 {
-                            self.merge_prev_row();
-                        }
-                    }
-                } else {
-                    if self.cy < self.editor.get_buf_mut().num_rows() {
-                        if self.cx < self.get_row().size() {
-                            self.remove_char(1);
-                        } else if self.cy < self.editor.get_buf_mut().num_rows() - 1 {
-                            self.merge_next_row();
-                        }
-                    }
-                }
+                // if code == KeyCode::Backspace {
+                //     if self.cy < self.editor.get_buf_mut().num_rows() {
+                //         if self.cx > 0 {
+                //             self.remove_char(0);
+                //         } else if self.cy > 0 {
+                //             self.merge_prev_row();
+                //         }
+                //     }
+                // } else {
+                //     if self.cy < self.editor.get_buf_mut().num_rows() {
+                //         if self.cx < self.get_row().size() {
+                //             self.remove_char(1);
+                //         } else if self.cy < self.editor.get_buf_mut().num_rows() - 1 {
+                //             self.merge_next_row();
+                //         }
+                //     }
+                // }
+                self.remove_char(code == KeyCode::Delete);
             }
 
             // CTRL+SHIFT+/ or CTRL+? (show keybinds)
@@ -1337,24 +1334,43 @@ impl Screen {
         let buf = self.editor.get_buf_mut();
         let syntax = buf.syntax();
 
-        if buf.num_rows() == 0 {
-            buf.append_row(Row::new());
-        }
-
         Pos(self.cx, self.cy) = buf.insert_rows(pos!(self), vec![Row::from_chars(ch.to_string(), config, syntax)], config);
     }
 
-    /// Removes character at `self.cx + offset - 1`.
+    /// Removes a character at the cursor.
     /// 
-    /// `offset = 0` for backspace, `offset = 1` for delete.
-    pub fn remove_char(&mut self, offset: usize) {
-        let cx = self.cx + offset;
-        let config = Rc::clone(&self.config);
-        let syntax = self.editor.get_buf().syntax();
-        (*self.get_row_mut()).remove_char(cx - 1, &*config, syntax);
+    /// If `is_delete` is true, it will remove the next character instead.
+    pub fn remove_char(&mut self, is_delete: bool) {
+        let config = &self.config;
 
-        self.cx -= 1;
-        self.editor.get_buf_mut().make_dirty();
+        let mut from = pos!(self);
+        let to;
+
+        if is_delete {
+            if from.x() == self.get_row().rsize() {
+                if from.y() == self.editor.get_buf().num_rows() - 1 {
+                    return;
+                }
+
+                to = Pos(0, from.y() + 1);
+            } else {
+                to = Pos(from.x() + 1, from.y());
+            }
+        } else {
+            if from.x() == 0 {
+                if from.y() == 0 {
+                    return;
+                } else {
+                    to = from;
+                    from = Pos(self.editor.get_buf().rows()[from.y() - 1].rsize(), from.y() - 1);
+                }
+            } else {
+                to = from;
+                from = Pos(from.x() - 1, from.y())
+            }
+        }
+
+        Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, config);
     }
 
     pub fn split_row(&mut self) {
@@ -1370,44 +1386,6 @@ impl Screen {
         self.cx = 0;
         self.cy += 1;
         (*buf.num_rows_mut()) += 1;
-        buf.make_dirty();
-    }
-
-    pub fn merge_prev_row(&mut self) {
-        let buf = self.editor.get_buf();
-
-        if self.cy >= buf.num_rows() {
-            return;
-        }
-    
-        self.cy -= 1;
-        let prev_row_len = self.get_row().size();
-        self.cy += 1;
-    
-        let config = Rc::clone(&self.config);
-        let buf = self.editor.get_buf_mut();
-        let file_row = self.cy;
-        (*buf).merge_rows(file_row - 1, file_row, &config);
-    
-        self.cy -= 1;
-        self.cx = prev_row_len;
-        (*buf.num_rows_mut()) -= 1;
-        buf.make_dirty();
-    }
-
-    pub fn merge_next_row(&mut self) {
-        let buf = self.editor.get_buf();
-        
-        if self.cy >= buf.num_rows() {
-            return;
-        }
-    
-        let config = Rc::clone(&self.config);
-        let buf = self.editor.get_buf_mut();
-        let file_row = self.cy + self.row_offset;
-        (*buf).merge_rows(file_row, file_row + 1, &*config);
-    
-        (*buf.num_rows_mut()) -= 1;
         buf.make_dirty();
     }
 

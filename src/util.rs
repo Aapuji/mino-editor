@@ -1,4 +1,4 @@
-use std::{cmp, ops::Sub};
+use std::{cmp, ops::Add};
 
 /// Trait to easily convert to u16.
 pub trait AsU16 {
@@ -50,21 +50,6 @@ impl Pos {
     }
 }
 
-impl<T> From<(T, T)> for Pos 
-where
-    usize: From<T>
-{
-    fn from(value: (T, T)) -> Self {
-        Self(usize::from(value.0), usize::from(value.1))
-    }
-}
-
-impl From<Pos> for (usize, usize) {
-    fn from(value: Pos) -> Self {
-        (value.x(), value.y())
-    }
-}
-
 impl Ord for Pos {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         if self.y() < other.y() {
@@ -84,6 +69,14 @@ impl Ord for Pos {
 impl PartialOrd for Pos {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(Ord::cmp(self, other))
+    }
+}
+
+impl Add<Pos> for Pos {
+    type Output = Self;
+    
+    fn add(self, rhs: Pos) -> Self::Output {
+        Pos(self.0 + rhs.0, self.1 + rhs.1)
     }
 }
 
