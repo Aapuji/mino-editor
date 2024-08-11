@@ -974,15 +974,15 @@ impl Screen {
                 ..
             } => {
                 let config = &self.config;
-            let buf = self.editor.get_buf_mut();
-            let syntax = buf.syntax();
+                let buf = self.editor.get_buf_mut();
+                let syntax = buf.syntax();
 
-            Pos(self.cx, self.cy) = buf.insert_rows(pos!(self), vec![
-                Row::from_chars("<-- Start of insertion:".to_owned(), config, syntax),
-                Row::from_chars("Middle of insertion".to_owned(), config, syntax),
-                Row::from_chars("End of insertion -->".to_owned(), config, syntax)
-                ], config);
-            }
+                Pos(self.cx, self.cy) = buf.insert_rows(pos!(self), vec![
+                    Row::from_chars("<-- Start of insertion:".to_owned(), config, syntax),
+                    Row::from_chars("Middle of insertion".to_owned(), config, syntax),
+                    Row::from_chars("End of insertion -->".to_owned(), config, syntax)
+                    ], config);
+                }
 
             // Move (arrows)
             KeyEvent {

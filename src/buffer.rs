@@ -125,8 +125,9 @@ impl TextBuffer {
     /// 
     /// Returns position of end of newly inserted rows.
     /// 
-    /// Assumes the given `pos` is a valid position in the text buffer.
-    pub fn insert_rows(&mut self, pos: Pos, mut rows: Vec<Row>, config: &Config) -> Pos {
+    /// Assumes the given `pos` is a valid position in the text buffer. 
+    /// Also assumes that all `Row`s in `rows` are made dirty beforehand (this function will not change the cleanliness of the rows).
+    pub fn insert_rows(&mut self, pos: Pos, rows: Vec<Row>, config: &Config) -> Pos {
         if rows.is_empty() {
             return pos;
         }
@@ -139,64 +140,94 @@ impl TextBuffer {
         let syntax = self.syntax;
         let mut res_pos = pos;
 
-        // First new row, inserted in same row
-        let is_last_row = self.num_rows == pos.y() + 1;
+        // First row
         let row = self.row_at_mut(pos.y());
-
-        row.chars.insert_str(row.rx_to_cx(pos.x(), config), &rows[0].chars);
-        row.size += rows[0].size();
-        row.make_dirty();
+        
+        let remaining = row.chars[pos.x()..].to_owned();
+        row.chars.replace_range(pos.x().., &rows[0].chars);
+        row.size = row.chars.len();
         row.update(config, syntax);
+        row.make_dirty();
 
-        res_pos.set_x(pos.x() + rows[0].rsize());
+        if num_inserted > 1 {
+            res_pos = Pos(0, pos.y() + num_inserted - 1);
 
-        let mut last_row = if num_inserted == 1 {
-            return res_pos;
-        } else if num_inserted == 2 {
-            rows.remove(1)
-        } else {
-            // Intermediary new rows
-            rows
+            // Remaining rows
+            self.rows.reserve(num_inserted - 1);
+            let mut r = self.rows.split_off(pos.y() + 1);
+            self.rows.extend(rows
                 .into_iter()
                 .skip(1)
-                .enumerate()
-                .fold(Row::new(), |prev_row, (i, mut row)| {
-                    if i < num_inserted - 2 {
-                        row.make_dirty();
-
-                        if self.num_rows == res_pos.y() + 1 {
-                            self.append_row(row);
-                        } else {
-                            self.rows.insert(res_pos.y(), row);
-                        }
-
-                        res_pos.set_y(res_pos.y() + 1);
-
-                        prev_row
-                    } else {
-                        row
-                    }
-                })
-        };
-
-        // Last new row, prepended to "next" og row
-        res_pos.set_x(last_row.rsize());
-        res_pos.set_y(res_pos.y() + 1);
-
-        last_row.make_dirty();
-
-        if is_last_row {
-            self.append_row(last_row);
-        } else {
-            let row = self.row_at_mut(res_pos.y());
-            row.chars.insert_str(0, &last_row.chars); // No need for rx->cx because it's the first char
-            row.size += last_row.size();
-            row.update(config, syntax);
+                .map(|mut r| { r.make_dirty(); r })
+            );
+            self.rows.append(&mut r);
         }
 
-        self.num_rows += 1;
+        self.num_rows = self.rows.len();
+
+        // Last row -- append remaining text from og first row
+        let last_row = &mut self.rows[res_pos.y()];
+        res_pos.set_x(last_row.rsize);
+        last_row.chars.push_str(&remaining);
+        last_row.size = last_row.chars.len();
+        last_row.update(config, syntax);
 
         res_pos
+
+        // // First new row, inserted in same row
+        // let is_last_row = self.num_rows == pos.y() + 1;
+        // let row = self.row_at_mut(pos.y());
+
+        // row.chars.insert_str(row.rx_to_cx(pos.x(), config), &rows[0].chars);
+        // row.size += rows[0].size();
+        // row.make_dirty();
+        // row.update(config, syntax);
+
+        // res_pos.set_x(pos.x() + rows[0].rsize());
+
+        // let mut last_row = if num_inserted == 1 {
+        //     return res_pos;
+        // } else if num_inserted == 2 {
+        //     rows.remove(1)
+        // } else {
+        //     // Intermediary new rows
+        //     rows
+        //         .into_iter()
+        //         .skip(1)
+        //         .enumerate()
+        //         .fold(Row::new(), |prev_row, (i, mut row)| {
+        //             if i < num_inserted - 2 {
+        //                 row.make_dirty();
+
+        //                 if self.num_rows == res_pos.y() + 1 {
+        //                     self.append_row(row);
+        //                 } else {
+        //                     self.rows.insert(res_pos.y(), row);
+        //                 }
+
+        //                 res_pos.set_y(res_pos.y() + 1);
+
+        //                 prev_row
+        //             } else {
+        //                 row
+        //             }
+        //         })
+        // };
+
+        // // Last new row, prepended to "next" og row
+        // res_pos.set_x(last_row.rsize());
+        // res_pos.set_y(res_pos.y() + 1);
+
+        // last_row.make_dirty();
+
+        // if is_last_row {
+        //     self.append_row(last_row);
+        // } else {
+        //     let row = self.row_at_mut(res_pos.y());
+        //     row.chars.insert_str(0, &last_row.chars); // No need for rx->cx because it's the first char
+        //     row.size += last_row.size();
+        //     row.update(config, syntax);
+        // }
     }
 
     /// Removes the text & rows between the `from` and `to` positions.
@@ -728,7 +759,10 @@ impl Row {
             }
 
             // Highlight Identifiers 
-            if (is_prev_sep || prev_hl.syntax_hl() == SyntaxHighlight::Ident) && !is_sep(ch) {
+            if checkflags!(HIGHLIGHT_IDENTS in syntax.flags()) &&
+                (is_prev_sep || prev_hl.syntax_hl() == SyntaxHighlight::Ident) && 
+                !is_sep(ch) 
+            {
                 // For highlighting the first letter of capitalized idents (eg. MyClass) as types
                 if checkflags!(CAPITAL_AS_TYPES in syntax.flags()) &&
                     is_prev_sep &&

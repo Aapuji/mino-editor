@@ -57,7 +57,8 @@ bitflags! {
     pub struct SyntaxFlags: u8 {
         const HIGHLIGHT_NUMBERS = 0b0000_0001;  // Whether to highlight numbers
         const HIGHLIGHT_STRINGS = 0b0000_0010;  // Whether to highlight strings
-        const NESTED_COMMENTS   = 0b0000_0100;  // Whether to allow nested multiline comments
+        const HIGHLIGHT_IDENTS  = 0b0000_0100;  // Whether to highlight identifiers
+        const NESTED_COMMENTS   = 0b0000_1000;  // Whether to allow nested multiline comments
         const CAPITAL_AS_TYPES  = 0b0000_1000;  // Whether to treat words starting with capitals as types
         const NONE              = 0b0000_0000;
     }
@@ -90,7 +91,8 @@ impl Syntax {
         flags: bitexpr! {
             SyntaxFlags :
             HIGHLIGHT_NUMBERS | 
-            HIGHLIGHT_STRINGS
+            HIGHLIGHT_STRINGS |
+            HIGHLIGHT_IDENTS
         }
     };
 
@@ -107,6 +109,7 @@ impl Syntax {
             SyntaxFlags :
             HIGHLIGHT_NUMBERS | 
             HIGHLIGHT_STRINGS |
+            HIGHLIGHT_IDENTS  |
             NESTED_COMMENTS   |
             CAPITAL_AS_TYPES
         }
@@ -121,7 +124,7 @@ impl Syntax {
         path_access_delims: &[],
         ln_comment: Some("#"),
         multi_comment: None,
-        flags: bitexpr!(SyntaxFlags: HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS)
+        flags: bitexpr!(SyntaxFlags: HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS | HIGHLIGHT_IDENTS)
     };
 
     pub const UNKNOWN: &'static Self = &Self {
