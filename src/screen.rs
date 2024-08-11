@@ -967,13 +967,31 @@ impl Screen {
                 self.find()?;
             }
 
+            // Select All (CTRL+A)
+            KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                if self.editor.get_buf().is_in_select_mode() {
+                    self.exit_select_mode();
+                }
+
+                (self.cx, self.cy) = (0, 0);
+                self.enter_select_mode();
+
+                self.cy = self.editor.get_buf().num_rows() - 1;
+                self.cx = self.get_row().rsize();
+                self.select();
+            }
+
             // Paste (CTRL+V)
             KeyEvent { 
                 code: KeyCode::Char('v'), 
                 modifiers: KeyModifiers::CONTROL, 
                 ..
             } => {
-                let config = &self.config;
+                let config = &*self.config;
                 let buf = self.editor.get_buf_mut();
                 let syntax = buf.syntax();
 
@@ -989,7 +1007,7 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                let config = &self.config;
+                let config = &*self.config;
                 let buf = self.editor.get_buf_mut();
 
                 Pos(self.cx, self.cy) = buf.remove_rows(Pos(self.cx, self.cy), Pos(0, 3), config);
@@ -1031,7 +1049,7 @@ impl Screen {
                 self.select();
             }
 
-            // Page Up/Page Down
+            // Page Up/Page Down (pg up/dn)
             KeyEvent { 
                 code: code @ (KeyCode::PageUp | KeyCode::PageDown), 
                 modifiers: KeyModifiers::NONE, 
@@ -1054,6 +1072,15 @@ impl Screen {
                         KeyCode::Down
                     });
                 }
+            }
+
+            // Select & Page Up/Page Down (SHIFT + pg up/dn)
+            KeyEvent {
+                code: code @ (KeyCode::PageUp | KeyCode::PageDown),
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                () // TODO
             }
 
             // Home/End
@@ -1086,15 +1113,7 @@ impl Screen {
                 modifiers: KeyModifiers::NONE, 
                 .. 
             } => {
-                let num_rows = self.editor.get_buf_mut().num_rows();
-
-                if self.cy < num_rows {
-                    self.split_row();
-                } else if self.cy == num_rows {
-                    let buf = self.editor.get_buf_mut();
-
-                    buf.append_row(Row::new());
-                }
+                Pos(self.cx, self.cy) = self.editor.get_buf_mut().insert_rows(pos!(self), vec![Row::new(); 2], &config);
             }
 
             // Backspace/Delete (remove char)
@@ -1103,7 +1122,12 @@ impl Screen {
                 modifiers: KeyModifiers::NONE, 
                 ..
             } => {
-                self.remove_char(code == KeyCode::Delete);
+                if self.editor.get_buf().is_in_select_mode() {
+                    let (from, to) = self.get_select_region();
+                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config);
+                } else {
+                    self.remove_char(code == KeyCode::Delete);
+                }
             }
 
             // CTRL+SHIFT+/ or CTRL+? (show keybinds)
@@ -1129,6 +1153,11 @@ impl Screen {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
+                if self.editor.get_buf().is_in_select_mode() {
+                    let (from, to) = self.get_select_region();
+                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config);
+                }
+
                 self.insert_char('\t');
             }
 
@@ -1138,6 +1167,11 @@ impl Screen {
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT, 
                 .. 
             } => {
+                if self.editor.get_buf().is_in_select_mode() {
+                    let (from, to) = self.get_select_region();
+                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config)
+                }
+                
                 self.insert_char(ch);
             }
 
@@ -1262,6 +1296,18 @@ impl Screen {
         }
     }
 
+    /// Gets the start and end positions for the current selection.
+    /// 
+    /// Assumes that a select anchor exists (ie. buffer is in select mode)
+    pub fn get_select_region(&self) -> (Pos, Pos) {
+        let anchor = self.editor.get_buf().select_anchor().unwrap();
+
+        let mut res = [anchor, pos!(self)];
+        res.sort();
+
+        res.into()
+    }
+
     /// Renames current buffer. 
     pub fn rename(&mut self) -> error::Result<()> {
         let path = self.prompt("Rename (ESC to cancel): ", &|_, _, _| { })?;
@@ -1339,7 +1385,7 @@ impl Screen {
             return;
         }
 
-        let config = &self.config;
+        let config = &*self.config;
 
         let mut from = pos!(self);
         let to;
@@ -1371,21 +1417,7 @@ impl Screen {
         Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, config);
     }
 
-    pub fn split_row(&mut self) {
-        let cx = self.cx;
-        let col_offset = self.col_offset;
-
-        let config = Rc::clone(&self.config);
-        let syntax = self.editor.get_buf().syntax();
-        let row = self.get_row_mut().split_row(cx + col_offset, &*config, syntax);
-        let buf = self.editor.get_buf_mut();
-        buf.rows_mut().insert(self.cy + 1, row);
-    
-        self.cx = 0;
-        self.cy += 1;
-        buf.make_dirty();
-    }
-
+    /// Gets the row according to `self`'s `cy` attribute.
     pub fn get_row(&self) -> &Row {
         &self.editor.get_buf().rows()[self.cy]
     }

@@ -204,19 +204,6 @@ impl TextBuffer {
         from
     }
 
-    pub fn capture_rows(&mut self) -> &[Row] {
-        todo!()
-    }
-
-    pub fn merge_rows(&mut self, dest_i: usize, moving_i: usize, config: &Config) {
-        let s = self.rows[moving_i].chars().to_owned();
-        (*self.rows[dest_i].chars_mut()).push_str(&s);
-    
-        self.rows[dest_i].update(config, self.syntax);
-    
-        self.rows.remove(moving_i);
-    }
-
     pub fn rows(&self) -> &Vec<Row> {
         &self.rows
     }
