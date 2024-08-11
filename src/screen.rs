@@ -180,7 +180,9 @@ impl Screen {
             self.queue(MoveTo(self.status.msg().len().as_u16(), self.screen_rows.as_u16() + 1))?;
         }
 
-        self.execute(Show)?;
+        if !self.config.hide_cursor_on_new_buf() || self.editor.get_buf().num_rows() > 0 {
+            self.execute(Show)?;
+        }
 
         Ok(())
     }
@@ -474,8 +476,6 @@ impl Screen {
             welcome_len = self.screen_cols;
         }
         let mut px = (self.screen_cols - welcome_len) / 2;
-
-        // self.queue(Hide)?;
 
         for y in 0..y_max {
             let file_row = y + self.row_offset;
@@ -982,7 +982,18 @@ impl Screen {
                     Row::from_chars("Middle of insertion".to_owned(), config, syntax),
                     Row::from_chars("End of insertion -->".to_owned(), config, syntax)
                     ], config);
-                }
+            }
+
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                let config = &self.config;
+                let buf = self.editor.get_buf_mut();
+
+                Pos(self.cx, self.cy) = buf.remove_rows(Pos(self.cx, self.cy), Pos(0, 3), config);
+            }
 
             // Move (arrows)
             KeyEvent {
@@ -1092,23 +1103,6 @@ impl Screen {
                 modifiers: KeyModifiers::NONE, 
                 ..
             } => {
-                // if code == KeyCode::Backspace {
-                //     if self.cy < self.editor.get_buf_mut().num_rows() {
-                //         if self.cx > 0 {
-                //             self.remove_char(0);
-                //         } else if self.cy > 0 {
-                //             self.merge_prev_row();
-                //         }
-                //     }
-                // } else {
-                //     if self.cy < self.editor.get_buf_mut().num_rows() {
-                //         if self.cx < self.get_row().size() {
-                //             self.remove_char(1);
-                //         } else if self.cy < self.editor.get_buf_mut().num_rows() - 1 {
-                //             self.merge_next_row();
-                //         }
-                //     }
-                // }
                 self.remove_char(code == KeyCode::Delete);
             }
 
@@ -1341,6 +1335,10 @@ impl Screen {
     /// 
     /// If `is_delete` is true, it will remove the next character instead.
     pub fn remove_char(&mut self, is_delete: bool) {
+        if self.editor.get_buf().num_rows() == 0 {
+            return;
+        }
+
         let config = &self.config;
 
         let mut from = pos!(self);
@@ -1379,13 +1377,12 @@ impl Screen {
 
         let config = Rc::clone(&self.config);
         let syntax = self.editor.get_buf().syntax();
-        let row = (*self.get_row_mut()).split_row(cx + col_offset, &*config, syntax);
+        let row = self.get_row_mut().split_row(cx + col_offset, &*config, syntax);
         let buf = self.editor.get_buf_mut();
-        (*buf.rows_mut()).insert(self.cy + 1, row);
+        buf.rows_mut().insert(self.cy + 1, row);
     
         self.cx = 0;
         self.cy += 1;
-        (*buf.num_rows_mut()) += 1;
         buf.make_dirty();
     }
 

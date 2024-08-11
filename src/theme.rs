@@ -97,7 +97,7 @@ impl Themes {
 
 impl Default for Themes {
     fn default() -> Self {
-        Themes::VsCode
+        Themes::Campbell
     }
 }
 

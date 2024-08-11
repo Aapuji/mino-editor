@@ -13,6 +13,7 @@ pub struct Config {
     close_times: u32,
     msg_bar_life: Duration,
     prompt_bar_cursor_style: CursorStyle,
+    hide_cursor_on_new_buf: bool, 
     color_support: ColorSupport,
     theme: Theme
 }
@@ -38,12 +39,16 @@ impl Config {
         self.prompt_bar_cursor_style
     }
 
-    pub fn theme(&self) -> &Theme {
-        &self.theme
+    pub fn hide_cursor_on_new_buf(&self) -> bool {
+        self.hide_cursor_on_new_buf
     }
 
     pub fn color_support(&self) -> ColorSupport {
         self.color_support
+    }
+
+    pub fn theme(&self) -> &Theme {
+        &self.theme
     }
 }
 
@@ -55,7 +60,7 @@ impl Default for Config {
             close_times: 1,
             msg_bar_life: Duration::from_secs(5),
             prompt_bar_cursor_style: CursorStyle::Regular,
-            theme: Themes::default().theme(),
+            hide_cursor_on_new_buf: true,
             color_support: if let Some(support) = supports_color::on(Stream::Stdout) {
                 if support.has_16m {
                     ColorSupport::RGB
@@ -68,7 +73,8 @@ impl Default for Config {
                 }
             } else {
                 ColorSupport::None
-            }
+            },
+            theme: Themes::default().theme(),
         }
     }
 }

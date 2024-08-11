@@ -9,7 +9,6 @@ use crate::error::{self, Error};
 use crate::highlight::Highlight;
 use crate::highlight::SyntaxHighlight;
 use crate::lang::{is_sep, Language, Syntax};
-use crate::pos;
 use crate::style::Style;
 use crate::theme::Theme;
 use crate::util::Pos;
@@ -18,7 +17,6 @@ use crate::util::Pos;
 #[derive(Debug)]
 pub struct TextBuffer {
     rows: Vec<Row>,
-    num_rows: usize,
     file_name: String,
     is_dirty: bool,
     saved_cursor_pos: Pos,
@@ -32,7 +30,6 @@ impl TextBuffer {
     pub fn new() -> Self {
         Self {
             rows: vec![],
-            num_rows: 0,
             file_name: String::new(),
             is_dirty: false,
             saved_cursor_pos: Pos(0, 0),
@@ -80,16 +77,17 @@ impl TextBuffer {
     }
 
     pub fn row_at(&self, idx: usize) -> &Row {
-        if idx >= self.num_rows {
-            &self.rows[self.num_rows - 1]
+        if idx >= self.num_rows() {
+            &self.rows[self.num_rows() - 1]
         } else {
             &self.rows[idx]
         }
     }
 
     pub fn row_at_mut(&mut self, idx: usize) -> &mut Row {
-        if idx >= self.num_rows {
-            &mut self.rows[self.num_rows - 1]
+        if idx >= self.num_rows() {
+            let len = self.num_rows();
+            &mut self.rows[len - 1]
         } else {
             &mut self.rows[idx]
         }
@@ -107,7 +105,6 @@ impl TextBuffer {
 
     fn push(&mut self, row: Row) {
         self.rows.push(row);
-        self.num_rows += 1;
     }
 
     pub fn rows_to_string(&self) -> String {
@@ -132,7 +129,7 @@ impl TextBuffer {
             return pos;
         }
 
-        if self.num_rows == 0 {
+        if self.rows.is_empty() {
             self.append_row(Row::new());
         }
         
@@ -145,7 +142,6 @@ impl TextBuffer {
         
         let remaining = row.chars[pos.x()..].to_owned();
         row.chars.replace_range(pos.x().., &rows[0].chars);
-        row.size = row.chars.len();
         row.update(config, syntax);
         row.make_dirty();
 
@@ -163,71 +159,13 @@ impl TextBuffer {
             self.rows.append(&mut r);
         }
 
-        self.num_rows = self.rows.len();
-
         // Last row -- append remaining text from og first row
         let last_row = &mut self.rows[res_pos.y()];
-        res_pos.set_x(last_row.rsize);
+        res_pos.set_x(last_row.rsize());
         last_row.chars.push_str(&remaining);
-        last_row.size = last_row.chars.len();
         last_row.update(config, syntax);
 
         res_pos
-
-        // // First new row, inserted in same row
-        // let is_last_row = self.num_rows == pos.y() + 1;
-        // let row = self.row_at_mut(pos.y());
-
-        // row.chars.insert_str(row.rx_to_cx(pos.x(), config), &rows[0].chars);
-        // row.size += rows[0].size();
-        // row.make_dirty();
-        // row.update(config, syntax);
-
-        // res_pos.set_x(pos.x() + rows[0].rsize());
-
-        // let mut last_row = if num_inserted == 1 {
-        //     return res_pos;
-        // } else if num_inserted == 2 {
-        //     rows.remove(1)
-        // } else {
-        //     // Intermediary new rows
-        //     rows
-        //         .into_iter()
-        //         .skip(1)
-        //         .enumerate()
-        //         .fold(Row::new(), |prev_row, (i, mut row)| {
-        //             if i < num_inserted - 2 {
-        //                 row.make_dirty();
-
-        //                 if self.num_rows == res_pos.y() + 1 {
-        //                     self.append_row(row);
-        //                 } else {
-        //                     self.rows.insert(res_pos.y(), row);
-        //                 }
-
-        //                 res_pos.set_y(res_pos.y() + 1);
-
-        //                 prev_row
-        //             } else {
-        //                 row
-        //             }
-        //         })
-        // };
-
-        // // Last new row, prepended to "next" og row
-        // res_pos.set_x(last_row.rsize());
-        // res_pos.set_y(res_pos.y() + 1);
-
-        // last_row.make_dirty();
-
-        // if is_last_row {
-        //     self.append_row(last_row);
-        // } else {
-        //     let row = self.row_at_mut(res_pos.y());
-        //     row.chars.insert_str(0, &last_row.chars); // No need for rx->cx because it's the first char
-        //     row.size += last_row.size();
-        //     row.update(config, syntax);
-        // }
     }
 
     /// Removes the text & rows between the `from` and `to` positions.
@@ -240,37 +178,28 @@ impl TextBuffer {
             return from;
         }
 
-        let syntax = self.syntax;
-
         let from_cx = self.row_at(from.y()).rx_to_cx(from.x(), config);
         let to_cx = self.row_at(to.y()).rx_to_cx(to.x(), config);
 
-        // Same line
-        if from.y() == to.y() {
-            self.row_at_mut(from.y()).chars_mut().replace_range(from_cx..to_cx, "");
-        // Different lines
-        } else {
-            // First line
-            self.row_at_mut(from.y()).chars_mut().replace_range(from_cx.., "");
+        let lines_removed = to.y() - from.y();
 
-            // Intermediary lines
+        if lines_removed == 0 {
+            self.rows[from.y()].chars.replace_range(from_cx..to_cx, "");
+        } else {
+            self.rows[from.y()].chars.replace_range(from_cx.., "");
+
             self.rows.drain(from.y()+1..to.y());
 
-            // Last line
-            let mut chars = self.row_at_mut(to.y()).chars_mut().clone();
-            chars.replace_range(..to.x(), "");
-            self.rows.remove(to.y());
+            self.rows[from.y() + 1].chars.replace_range(..to_cx, "");
+            let chars = self.rows[from.y() + 1].chars.clone();
+            self.rows.remove(from.y() + 1);
 
-            let row = self.row_at_mut(from.y());
-            row.chars_mut().push_str(&chars);
-            *row.size_mut() += chars.len(); 
-            row.update(config, syntax);
-            
-            self.num_rows -= to.y() - from.y();
+            let row = &mut self.rows[from.y()];
+            row.chars.push_str(&chars);
         }
 
         let syntax = self.syntax;
-        self.row_at_mut(from.y()).update(config, syntax);
+        self.rows[from.y()].update(config, syntax);
 
         from
     }
@@ -282,7 +211,6 @@ impl TextBuffer {
     pub fn merge_rows(&mut self, dest_i: usize, moving_i: usize, config: &Config) {
         let s = self.rows[moving_i].chars().to_owned();
         (*self.rows[dest_i].chars_mut()).push_str(&s);
-        (*self.rows[dest_i].size_mut()) += self.rows[moving_i].size();
     
         self.rows[dest_i].update(config, self.syntax);
     
@@ -298,11 +226,7 @@ impl TextBuffer {
     }
 
     pub fn num_rows(&self) -> usize {
-        self.num_rows
-    }
-
-    pub fn num_rows_mut(&mut self) -> &mut usize {
-        &mut self.num_rows
+        self.rows.len()
     }
 
     pub fn file_name(&self) -> &str {
@@ -384,8 +308,6 @@ impl TextBuffer {
 /// Struct for holding information about a row in a `TextBuffer`.
 #[derive(Debug, Clone)]
 pub struct Row {
-    size: usize,
-    rsize: usize,
     chars: String,
     render: String,
     hl: Vec<Highlight>,
@@ -397,8 +319,6 @@ impl Row {
     /// Create a new, empty `Row`.
     pub fn new() -> Self {
         Self {
-            size: 0,
-            rsize: 0,
             chars: String::new(),
             render: String::new(),
             hl: vec![],
@@ -411,7 +331,6 @@ impl Row {
     pub fn from_chars(chars: String, config: &Config, syntax: &'static Syntax) -> Self {
         let mut row = Row::new();
         row.chars = chars;
-        row.size = row.chars.len();
         row.update(config, syntax);
 
         row
@@ -422,7 +341,7 @@ impl Row {
     where 
         R: ops::RangeBounds<usize>
     {
-        &self.chars[Self::index_range(&self.chars, self.size, range)]
+        &self.chars[Self::index_range(&self.chars, self.size(), range)]
     }
 
     /// Gets the chars at the given `range` of `self.render`. If any values of the range go out of bounds of the row's text, they are not used, so that it will not fail. If the range is entirely out of bounds, then all chars will not be used, returning an empty `&str`.
@@ -430,7 +349,7 @@ impl Row {
     where 
         R: ops::RangeBounds<usize>
     {
-        &self.render[Self::index_range(&self.render, self.rsize, range)]
+        &self.render[Self::index_range(&self.render, self.rsize(), range)]
     }
 
     /// Gets the chars at the given `range` of `self.render`, applying any highlights according to `self.hl`.
@@ -441,7 +360,7 @@ impl Row {
 
         let mut s = String::new();
         let mut prev_hl = Highlight::NORMAL;
-        for i in Self::index_range(&self.render, self.rsize, range) {
+        for i in Self::index_range(&self.render, self.rsize(), range) {
             let hl = &self.hl[i];
             
             if &prev_hl == hl {
@@ -503,7 +422,7 @@ impl Row {
 
     /// Updates the `render` and `rsize` properties to align with the `chars` property.
     pub fn update(&mut self, config: &Config, syntax: &'static Syntax) {
-        let mut render = String::with_capacity(self.size);
+        let mut render = String::with_capacity(self.size());
 
 		self.has_tabs = false;
         for ch in self.chars.chars() {
@@ -518,7 +437,6 @@ impl Row {
         }
 
         self.render = render;
-        self.rsize = self.render.len();
 
         self.update_highlight(syntax);
     }
@@ -526,11 +444,11 @@ impl Row {
     // TODO: Create `Highlighter` iterator/struct and put this in that
     pub fn update_highlight(&mut self, syntax: &'static Syntax) {
         if let Language::Unknown = syntax.lang() {
-            self.hl = vec![Highlight::default(); self.rsize];
+            self.hl = vec![Highlight::default(); self.rsize()];
             return;
         }
 
-        self.hl = Vec::with_capacity(self.rsize);
+        self.hl = Vec::with_capacity(self.rsize());
         let mut is_prev_sep = true;
         let mut quote: Option<char> = None;
         let mut nested_comments = 0u32; // # of nested comments
@@ -546,7 +464,7 @@ impl Row {
                 if quote.is_none() &&
                     ln_comment == self.rchars_at(i..i+ln_comment.len())
                 {
-                    self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Comment); self.rsize - self.hl.len()]);
+                    self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Comment); self.rsize() - self.hl.len()]);
                     break;
                 }
             }
@@ -599,7 +517,7 @@ impl Row {
                     for keyword in syntax.keywords() {
                         let len = keyword.len();
                         if *keyword == self.rchars_at(i..i+len) &&
-                            (self.rsize == i + len || 
+                            (self.rsize() == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
                             self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Keyword); len]);
@@ -630,7 +548,7 @@ impl Row {
                     for flowword in syntax.flowwords() {
                         let len = flowword.len();
                         if *flowword == self.rchars_at(i..i+len) &&
-                            (self.rsize == i + len || 
+                            (self.rsize() == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
                             self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Flowword); len]);
@@ -661,7 +579,7 @@ impl Row {
                     for common_type in syntax.common_types() {
                         let len = common_type.len();
                         if *common_type == self.rchars_at(i..i+len) &&
-                            (self.rsize == i + len || 
+                            (self.rsize() == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
                             self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Type); len]);
@@ -692,7 +610,7 @@ impl Row {
                     for metaword in syntax.metawords() {
                         let len = metaword.len();
                         if *metaword == self.rchars_at(i..i+len) &&
-                            (self.rsize == i + len || 
+                            (self.rsize() == i + len || 
                             is_sep(self.rchars_at(i+len..=i+len).chars().next().unwrap()))
                         {
                             self.hl.append(&mut vec![Highlight::from_syntax_hl(SyntaxHighlight::Metaword); len]);
@@ -723,7 +641,7 @@ impl Row {
                     self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::String));
 
                     // Escape character
-                    if ch == '\\' && i + 1 < self.rsize {
+                    if ch == '\\' && i + 1 < self.rsize() {
                         self.hl.push(Highlight::from_syntax_hl(SyntaxHighlight::String));
                         chars.next();
                         next = chars.next();
@@ -840,7 +758,7 @@ impl Row {
 
     /// Splits the current row and returns the next row created.
     pub fn split_row(&mut self, idx: usize, config: &Config, syntax: &'static Syntax) -> Row {
-        if idx >= self.size {
+        if idx >= self.size() {
             return Row::new();
         }
 
@@ -857,8 +775,6 @@ impl Row {
         let mut next_row = Row {
             chars: s,
             render: String::new(),
-            size: len,
-            rsize: 0,
             hl: vec![],
 			has_tabs: false,
             is_dirty: true
@@ -867,7 +783,6 @@ impl Row {
         next_row.update(config, syntax);
     
         self.chars = self.chars_at(..idx).to_owned();
-        self.size = self.chars.len();
     
         self.update(config, syntax);
     
@@ -914,19 +829,11 @@ impl Row {
     }
 
     pub fn size(&self) -> usize {
-        self.size
-    }
-
-    pub fn size_mut(&mut self) -> &mut usize {
-        &mut self.size
+        self.chars.len()
     }
 
     pub fn rsize(&self) -> usize {
-        self.rsize
-    }
-
-    pub fn rsize_mut(&mut self) -> &mut usize {
-        &mut self.rsize
+        self.render.len()
     }
 
     pub fn chars(&self) -> &str {
