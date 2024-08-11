@@ -194,6 +194,8 @@ impl TextBuffer {
             row.update(config, syntax);
         }
 
+        self.num_rows += 1;
+
         res_pos
     }
 
