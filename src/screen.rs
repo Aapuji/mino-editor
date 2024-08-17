@@ -177,6 +177,7 @@ impl Screen {
             if let CursorStyle::BigBar = self.config.prompt_bar_cursor_style() {
                 self.queue(Print("\x1b[0 q"))?;
             }
+            self.execute(Show)?;
             self.queue(MoveTo(self.status.msg().len().as_u16(), self.screen_rows.as_u16() + 1))?;
         }
 
@@ -868,6 +869,11 @@ impl Screen {
                         }
                     }
 
+                    // When there is only 1 empty buffer in the editor, replace that buffer instead of creating a new one
+                    if self.editor.num_bufs() == 1 && self.editor.bufs()[0].num_rows() == 0 {
+                        self.editor.remove_buf(0);
+                    }
+
                     let mut buf = TextBuffer::new();
                     buf.open(&text, &*self.config)?;
 
@@ -920,7 +926,7 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.rename()?;
+                self.rename("Rename (ESC to cancel): ")?;
             }
 
             // Refresh (CTRL+SHIFT+R)
@@ -947,15 +953,8 @@ impl Screen {
                 modifiers: m ,
                 ..
             } if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
-                match self.prompt("Save as (ESC to cancel): ", &|_, _, _| {})? {
-                    Some(path) => {
-                        self.editor.get_buf_mut().rename(&path)?;
-                        self.save()?;
-                    },
-                    None => {
-                        self.set_status_msg("Save aborted".to_owned());
-                    }
-                };
+                self.rename("Save as (ESC to cancel): ")?;
+                self.save()?;
             }
 
             // Find (CTRL+F)
@@ -991,15 +990,20 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL, 
                 ..
             } => {
-                let config = &*self.config;
-                let buf = self.editor.get_buf_mut();
-                let syntax = buf.syntax();
+                // let config = &*self.config;
+                // let buf = self.editor.get_buf_mut();
+                // let syntax = buf.syntax();
 
-                Pos(self.cx, self.cy) = buf.insert_rows(pos!(self), vec![
-                    Row::from_chars("<-- Start of insertion:".to_owned(), config, syntax),
-                    Row::from_chars("Middle of insertion".to_owned(), config, syntax),
-                    Row::from_chars("End of insertion -->".to_owned(), config, syntax)
-                    ], config);
+                // Pos(self.cx, self.cy) = buf.insert_rows(pos!(self), vec![
+                //     Row::from_chars("<-- Start of insertion:".to_owned(), config, syntax),
+                //     Row::from_chars("Middle of insertion".to_owned(), config, syntax),
+                //     Row::from_chars("End of insertion -->".to_owned(), config, syntax)
+                //     ], config);
+                if self.editor.get_buf().is_in_select_mode() {
+                    self.exit_select_mode();
+                }
+                
+                self.paste();
             }
 
             KeyEvent {
@@ -1007,10 +1011,7 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                let config = &*self.config;
-                let buf = self.editor.get_buf_mut();
-
-                Pos(self.cx, self.cy) = buf.remove_rows(Pos(self.cx, self.cy), Pos(0, 3), config);
+                self.copy();
             }
 
             // Move (arrows)
@@ -1191,6 +1192,29 @@ impl Screen {
         Ok(self)
     }
 
+    pub fn copy(&mut self) {
+        if !self.editor.get_buf().is_in_select_mode() {
+            return;
+        }
+
+        let (from, to) = self.get_select_region();
+        let context = self.get_region_chars(from, to);
+        self.editor.clipboard_mut().save_context(&context[..]);
+    }
+
+    pub fn paste(&mut self) {
+
+        let syntax = self.editor.get_buf().syntax();
+
+        let rows: Vec<Row> = self.editor.clipboard()
+            .load_context()
+            .into_iter()
+            .map(|s| Row::from_chars(s, &self.config, syntax))
+            .collect();
+
+        Pos(self.cx, self.cy) = self.editor.get_buf_mut().insert_rows(pos!(self), rows, &self.config);
+    }
+
     pub fn enter_select_mode(&mut self) {
         self.editor.get_buf_mut().set_anchor(Some(pos!(self)));
         self.editor.get_buf_mut().enter_select_mode();
@@ -1308,9 +1332,35 @@ impl Screen {
         res.into()
     }
 
+    /// Gets the chars of the rows for a given region.
+    pub fn get_region_chars(&self, from: Pos, to: Pos) -> Vec<String> {        
+        if from == to {
+            return vec![];
+        }
+
+        let buf = self.editor.get_buf();
+        let from_cx = buf.row_at(from.y()).rx_to_cx(from.x(), &self.config);
+        let to_cx = buf.row_at(to.y()).rx_to_cx(to.x(), &self.config);
+
+        if from.y() == to.y() {
+            return vec![buf.row_at(from.y()).chars_at(from_cx..to_cx).to_owned()];
+        }
+
+        let mut res = Vec::with_capacity(to.y() - from.y() + 1);
+        res.push(buf.rows()[from.y()].chars()[from_cx..].to_owned());
+
+        for i in 1..to.y()-from.y() {
+            res.push(self.editor.get_buf().row_at(from.y() + i).chars().to_owned());
+        }
+
+        res.push(buf.row_at(to.y()).chars_at(..to_cx).to_owned());
+
+        res
+    }
+
     /// Renames current buffer. 
-    pub fn rename(&mut self) -> error::Result<()> {
-        let path = self.prompt("Rename (ESC to cancel): ", &|_, _, _| { })?;
+    pub fn rename(&mut self, msg: &str) -> error::Result<()> {
+        let path = self.prompt(msg, &|_, _, _| { })?;
 
         if path.is_some() {
             let path = path.unwrap();
@@ -1321,6 +1371,23 @@ impl Screen {
                 if let Some(s) = res {
                     if s.to_lowercase() != "y" {
                         return Ok(());
+                    }
+
+                    // Deletes other buffers with the same file path
+                    let mut i = 0;
+                    loop {
+                        if i >= self.editor.num_bufs() {
+                            break;
+                        }
+
+                        if i != self.editor.current_buf() &&
+                            self.editor.bufs()[i].file_name() == path.trim()
+                        {
+                            self.editor.remove_buf(i);
+                            continue;
+                        }
+
+                        i += 1;
                     }
                 }
             }

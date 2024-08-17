@@ -1,11 +1,11 @@
 use std::ops;
-
 use crossterm::{
     self, 
     event::{self, Event, KeyEvent, KeyEventKind}
 };
 
 use crate::buffer::TextBuffer;
+use crate::clipboard::Clipboard;
 use crate::config::Config;
 use crate::error::{self, Error};
 
@@ -17,6 +17,7 @@ pub struct Editor {
     close_times: u32,
     last_match: LastMatch,
     is_search_forward: bool,
+    clipboard: Clipboard
 }
 
 impl Editor {
@@ -27,7 +28,8 @@ impl Editor {
             quit_times: 0,
             close_times: 0,
             last_match: LastMatch::MinusOne,
-            is_search_forward: true
+            is_search_forward: true,
+            clipboard: Clipboard::new()
         }
     }
 
@@ -192,6 +194,14 @@ impl Editor {
 
     pub fn search_backwards(&mut self) {
         self.is_search_forward = false;
+    }
+
+    pub fn clipboard(&self) -> &Clipboard {
+        &self.clipboard
+    }
+
+    pub fn clipboard_mut(&mut self) -> &mut Clipboard {
+        &mut self.clipboard
     }
 }
 

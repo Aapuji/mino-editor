@@ -1,6 +1,7 @@
 mod buffer;
 mod cleanup;
 mod cli;
+mod clipboard;
 mod config;
 mod editor;
 mod error;
