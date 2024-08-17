@@ -990,16 +990,9 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL, 
                 ..
             } => {
-                // let config = &*self.config;
-                // let buf = self.editor.get_buf_mut();
-                // let syntax = buf.syntax();
-
-                // Pos(self.cx, self.cy) = buf.insert_rows(pos!(self), vec![
-                //     Row::from_chars("<-- Start of insertion:".to_owned(), config, syntax),
-                //     Row::from_chars("Middle of insertion".to_owned(), config, syntax),
-                //     Row::from_chars("End of insertion -->".to_owned(), config, syntax)
-                //     ], config);
                 if self.editor.get_buf().is_in_select_mode() {
+                    let (from, to) = self.get_select_region();
+                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config);
                     self.exit_select_mode();
                 }
                 
@@ -1203,7 +1196,6 @@ impl Screen {
     }
 
     pub fn paste(&mut self) {
-
         let syntax = self.editor.get_buf().syntax();
 
         let rows: Vec<Row> = self.editor.clipboard()

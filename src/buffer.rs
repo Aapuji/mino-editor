@@ -123,7 +123,6 @@ impl TextBuffer {
     /// Returns position of end of newly inserted rows.
     /// 
     /// Assumes the given `pos` is a valid position in the text buffer. 
-    /// Also assumes that all `Row`s in `rows` are made dirty beforehand (this function will not change the cleanliness of the rows).
     pub fn insert_rows(&mut self, pos: Pos, rows: Vec<Row>, config: &Config) -> Pos {
         if rows.is_empty() {
             return pos;
@@ -165,6 +164,8 @@ impl TextBuffer {
         last_row.chars.push_str(&remaining);
         last_row.update(config, syntax);
 
+        self.make_dirty();
+
         res_pos
     }
 
@@ -200,6 +201,8 @@ impl TextBuffer {
 
         let syntax = self.syntax;
         self.rows[from.y()].update(config, syntax);
+
+        self.make_dirty();
 
         from
     }
