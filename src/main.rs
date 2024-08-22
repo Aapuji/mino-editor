@@ -3,9 +3,11 @@ mod cleanup;
 mod cli;
 mod clipboard;
 mod config;
+mod diff;
 mod editor;
 mod error;
 mod highlight;
+mod history;
 mod lang;
 mod screen;
 mod status;
@@ -32,7 +34,9 @@ fn setup() -> CleanUp {
 
 fn main() {
     // Debugging
-    env::set_var("RUST_BACKTRACE", "1");
+    #[cfg(debug_assertions)] {
+        env::set_var("RUST_BACKTRACE", "1");
+    }
 
     let cli = Cli::parse();
 

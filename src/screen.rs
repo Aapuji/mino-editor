@@ -12,6 +12,7 @@ use crossterm::{
     QueueableCommand
 };
 
+use crate::diff::Diff;
 use crate::style::Style;
 use crate::{MINO_VER, pos};
 use crate::config::{Config, CursorStyle};
@@ -990,8 +991,15 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL, 
                 ..
             } => {
+                // let buf = self.editor.get_buf_mut();
+
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
+
+                    // Pos(self.cx, self.cy) = self.editor.get_buf_mut().perform(self.editor.get_buf_mut().create_remove_region_diff(from, to, &config), |_| {
+                    //     self.editor.get_buf_mut().remove_rows(from, to, &config)
+                    // });
+
                     Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config);
                     self.exit_select_mode();
                 }

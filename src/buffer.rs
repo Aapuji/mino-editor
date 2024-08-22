@@ -5,9 +5,11 @@ use std::path::Path;
 
 use crate::checkflags;
 use crate::config::Config;
+use crate::diff::Diff;
 use crate::error::{self, Error};
 use crate::highlight::Highlight;
 use crate::highlight::SyntaxHighlight;
+use crate::history::History;
 use crate::lang::{is_sep, Language, Syntax};
 use crate::style::Style;
 use crate::theme::Theme;
@@ -22,7 +24,8 @@ pub struct TextBuffer {
     saved_cursor_pos: Pos,
     select_anchor: Option<Pos>,
     in_select_mode: bool,
-    syntax: &'static Syntax
+    syntax: &'static Syntax,
+    history: History
 }
 
 impl TextBuffer {
@@ -35,7 +38,8 @@ impl TextBuffer {
             saved_cursor_pos: Pos(0, 0),
             select_anchor: None,
             in_select_mode: false,
-            syntax: Syntax::UNKNOWN
+            syntax: Syntax::UNKNOWN,
+            history: History::new()
         }
     }
 
@@ -116,6 +120,13 @@ impl TextBuffer {
         }
     
         s
+    }
+
+    pub fn perform<F, T>(&mut self, diff: Diff, f: F) -> T 
+    where 
+        F: FnMut(&Diff) -> T
+    {
+        self.history.perform(diff, f)
     }
 
     /// Inserts the given `rows` at the given `pos`. The first row will be appended to the row `pos` is at, and the last row will be prepended to the row after the given `pos`.
@@ -207,6 +218,21 @@ impl TextBuffer {
         from
     }
 
+    pub fn create_remove_region_diff(&self, from: Pos, to: Pos, config: &Config) -> Diff {
+        let from_cx = self.row_at(from.y()).rx_to_cx(from.x(), config);
+        let to_cx = self.row_at(to.y()).rx_to_cx(to.x(), config);
+        
+        let mut s = String::from(self.row_at(from.y()).chars_at(from_cx..));
+
+        for y in from.y()+1..to.y() {
+            s.push_str(&self.row_at(y).chars);
+        }
+
+        s.push_str(self.row_at(to.y()).chars_at(..to_cx));
+
+        Diff::Remove(from, s)
+    }
+
     pub fn rows(&self) -> &Vec<Row> {
         &self.rows
     }
@@ -292,6 +318,14 @@ impl TextBuffer {
 
     pub fn syntax_mut(&mut self) -> &mut &'static Syntax{
         &mut self.syntax
+    }
+
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    pub fn history_mut(&mut self) -> &mut History {
+        &mut self.history
     }
 }
 
