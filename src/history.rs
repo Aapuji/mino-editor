@@ -20,8 +20,7 @@ impl History {
 
     pub fn perform(&mut self, diff: Diff) {
         self.redo.push_back(diff);
-        
-        f(self.redo.back().unwrap(), buf)
+        self.undo.clear();
     }
 
     pub fn redo(&mut self) {

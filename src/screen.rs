@@ -991,20 +991,32 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL, 
                 ..
             } => {
-                // let buf = self.editor.get_buf_mut();
-
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
-
-                    // Pos(self.cx, self.cy) = self.editor.get_buf_mut().perform(self.editor.get_buf_mut().create_remove_region_diff(from, to, &config), |_| {
-                    //     self.editor.get_buf_mut().remove_rows(from, to, &config)
-                    // });
 
                     Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config);
                     self.exit_select_mode();
                 }
                 
                 self.paste();
+            }
+
+            // Undo (CTRL+Z)
+            KeyEvent { 
+                code: KeyCode::Char('z'), 
+                modifiers: KeyModifiers::CONTROL, 
+                ..
+            } => {
+                self.undo();
+            }
+
+            // Redo (CTRL+Y)
+            KeyEvent {
+                code: KeyCode::Char('y'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+
             }
 
             KeyEvent {
@@ -1191,6 +1203,19 @@ impl Screen {
         self.editor.set_close_times(config.close_times());
 
         Ok(self)
+    }
+
+    pub fn undo(&mut self) {
+        let syntax = self.editor.get_buf().syntax();
+
+        if let Some(diff) = self.editor.get_buf_mut().history().current() {
+            let rows = diff.rows().into_iter().map(|c| Row::from_chars(c.to_owned(), &self.config, syntax)).collect();
+            Pos(self.cx, self.cy) = self.editor.get_buf_mut().insert_rows(pos!(self), rows, &self.config);
+        }
+    }
+
+    pub fn redo(&mut self) {
+
     }
 
     pub fn copy(&mut self) {
@@ -1424,7 +1449,7 @@ impl Screen {
             *buf.syntax_mut() = Syntax::select_syntax(ext);
         }
 
-        let text = buf.rows_to_string();
+        let text = TextBuffer::rows_to_string(buf.rows());
         let bytes = text.as_bytes();
         let bytes_wrote = bytes.len();
 

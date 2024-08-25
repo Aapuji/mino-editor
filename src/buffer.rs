@@ -111,7 +111,7 @@ impl TextBuffer {
         self.rows.push(row);
     }
 
-    pub fn rows_to_string(&self, rows: &[Row]) -> String {
+    pub fn rows_to_string(rows: &[Row]) -> String {
         let mut s = String::new();
 
         for row in rows {
@@ -122,36 +122,16 @@ impl TextBuffer {
         s
     }
 
-    pub fn region_to_string(&self, from: Pos, to: Pos, config: &Config) -> String {
-        let from_cx = self.row_at(from.y()).rx_to_cx(from.x(), config);
-        let to_cx = self.row_at(to.y()).rx_to_cx(to.x(), config);
-        
-        let mut s = self.row_at(from.y()).chars_at(from_cx..).to_owned();
-
-        for i in from.y()+1..to.y() {
-            s.push_str(&self.row_at(i).chars);
-        }
-
-        s.push_str(self.row_at(to.y()).chars_at(..to_cx));
-
-        s
-    }
-
-    // pub fn perform<F, T>(&mut self, diff: Diff, f: F) -> T 
-    // where 
-    //     F: FnMut(&Diff) -> T
-    // {
-    //     self.history.perform(diff, f)
-    // }
-
     /// Inserts the given `rows` at the given `pos`. The first row will be appended to the row `pos` is at, and the last row will be prepended to the row after the given `pos`.
     /// 
     /// Returns position of end of newly inserted rows.
     /// 
     /// Assumes the given `pos` is a valid position in the text buffer. 
-    pub fn insert_rows(&mut self, pos: Pos, rows: Vec<Row>, config: &Config) -> Pos {
-        let diff = Diff::Insert(pos, self.rows_to_string(&rows));
-        
+    pub fn insert_rows(&mut self, pos: Pos, rows: Vec<Row>, config: &Config) -> Pos {        
+        let diff = Diff::Insert(pos, rows.iter()
+            .map(|r| r.chars().to_owned())
+            .collect::<Vec<_>>());
+       
         if self.rows.is_empty() {
             return pos;
         }
@@ -204,7 +184,9 @@ impl TextBuffer {
     /// Returns the position of the collapse point (end of removed rows).
     /// 
     /// Assumes positions are valid, and that `from < to`.
-    pub fn remove_rows(&mut self, from: Pos, to: Pos, config: &Config) -> Pos {
+    pub fn remove_rows(&mut self, from: Pos, to: Pos, config: &Config) -> Pos {        
+        self.history.perform(self.create_remove_region_diff(from, to, config));
+        
         if from == to {
             return from;
         }
@@ -241,15 +223,17 @@ impl TextBuffer {
         let from_cx = self.row_at(from.y()).rx_to_cx(from.x(), config);
         let to_cx = self.row_at(to.y()).rx_to_cx(to.x(), config);
         
-        let mut s = String::from(self.row_at(from.y()).chars_at(from_cx..));
+        let mut rows = Vec::with_capacity(to.y()-from.y()+1);
+
+        rows.push(self.row_at(from.y()).chars_at(from_cx..).to_owned());
 
         for y in from.y()+1..to.y() {
-            s.push_str(&self.row_at(y).chars);
+            rows.push(self.row_at(y).chars.to_owned());
         }
 
-        s.push_str(self.row_at(to.y()).chars_at(..to_cx));
+        rows.push(self.row_at(to.y()).chars_at(..to_cx).to_owned());
 
-        Diff::Remove(from, s)
+        Diff::Remove(from, rows)
     }
 
     pub fn rows(&self) -> &Vec<Row> {
@@ -346,10 +330,14 @@ impl TextBuffer {
     pub fn history_mut(&mut self) -> &mut History {
         &mut self.history
     }
+
+    pub fn current_diff(&self) -> Option<&Diff> {
+        self.history.current()
+    }
 }
 
 /// Struct for holding information about a row in a `TextBuffer`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
     chars: String,
     render: String,
