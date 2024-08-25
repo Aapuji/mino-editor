@@ -111,10 +111,10 @@ impl TextBuffer {
         self.rows.push(row);
     }
 
-    pub fn rows_to_string(&self) -> String {
+    pub fn rows_to_string(&self, rows: &[Row]) -> String {
         let mut s = String::new();
 
-        for row in self.rows.iter() {
+        for row in rows {
             s.push_str(&row.chars[..]);
             s.push('\n');
         }
@@ -122,12 +122,27 @@ impl TextBuffer {
         s
     }
 
-    pub fn perform<F, T>(&mut self, diff: Diff, f: F) -> T 
-    where 
-        F: FnMut(&Diff) -> T
-    {
-        self.history.perform(diff, f)
+    pub fn region_to_string(&self, from: Pos, to: Pos, config: &Config) -> String {
+        let from_cx = self.row_at(from.y()).rx_to_cx(from.x(), config);
+        let to_cx = self.row_at(to.y()).rx_to_cx(to.x(), config);
+        
+        let mut s = self.row_at(from.y()).chars_at(from_cx..).to_owned();
+
+        for i in from.y()+1..to.y() {
+            s.push_str(&self.row_at(i).chars);
+        }
+
+        s.push_str(self.row_at(to.y()).chars_at(..to_cx));
+
+        s
     }
+
+    // pub fn perform<F, T>(&mut self, diff: Diff, f: F) -> T 
+    // where 
+    //     F: FnMut(&Diff) -> T
+    // {
+    //     self.history.perform(diff, f)
+    // }
 
     /// Inserts the given `rows` at the given `pos`. The first row will be appended to the row `pos` is at, and the last row will be prepended to the row after the given `pos`.
     /// 
@@ -135,7 +150,9 @@ impl TextBuffer {
     /// 
     /// Assumes the given `pos` is a valid position in the text buffer. 
     pub fn insert_rows(&mut self, pos: Pos, rows: Vec<Row>, config: &Config) -> Pos {
-        if rows.is_empty() {
+        let diff = Diff::Insert(pos, self.rows_to_string(&rows));
+        
+        if self.rows.is_empty() {
             return pos;
         }
 
@@ -176,6 +193,8 @@ impl TextBuffer {
         last_row.update(config, syntax);
 
         self.make_dirty();
+
+        self.history.perform(diff);
 
         res_pos
     }

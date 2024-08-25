@@ -6,25 +6,22 @@ const DEPTH: usize = 50;
 
 #[derive(Debug)]
 pub struct History {
-    redo: CircularBuffer<DEPTH, Diff>,
+    redo: Box<CircularBuffer<DEPTH, Diff>>,
     undo: Vec<Diff>,
 }
 
 impl History {
     pub fn new() -> Self {
         Self {
-            redo: CircularBuffer::new(),
+            redo: CircularBuffer::boxed(),
             undo: Vec::with_capacity(DEPTH),
         }
     }
 
-    pub fn perform<F, T>(&mut self, diff: Diff, mut f: F) -> T
-    where 
-        F: FnMut(&Diff) -> T
-    {
+    pub fn perform(&mut self, diff: Diff) {
         self.redo.push_back(diff);
         
-        f(self.redo.back().unwrap())
+        f(self.redo.back().unwrap(), buf)
     }
 
     pub fn redo(&mut self) {
