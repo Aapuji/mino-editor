@@ -12,9 +12,8 @@ use crossterm::{
     QueueableCommand
 };
 
-use crate::diff::Diff;
-use crate::style::Style;
 use crate::{MINO_VER, pos};
+use crate::style::Style;
 use crate::config::{Config, CursorStyle};
 use crate::highlight::SelectHighlight;
 use crate::lang::Syntax;
@@ -985,6 +984,15 @@ impl Screen {
                 self.select();
             }
 
+            // Copy (CTRL+C)
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.copy();
+            }
+            
             // Paste (CTRL+V)
             KeyEvent { 
                 code: KeyCode::Char('v'), 
@@ -993,8 +1001,9 @@ impl Screen {
             } => {
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
+                    let msg = self.editor.get_buf().create_remove_msg_region(from, to, &config);
 
-                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config);
+                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, msg, &config);
                     self.exit_select_mode();
                 }
                 
@@ -1016,15 +1025,16 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-
+                self.redo();
             }
 
+            // DEBUGGING ONLY: Test History CTRL+SHIFT+Z
             KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL,
+                code: KeyCode::Char('Y'),
+                modifiers: KeyModifiers::SHIFT,
                 ..
             } => {
-                self.copy();
+                self.test_history();
             }
 
             // Move (arrows)
@@ -1138,7 +1148,8 @@ impl Screen {
             } => {
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
-                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config);
+                    let msg = self.editor.get_buf().create_remove_msg_region(from, to, &config);
+                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, msg, &config);
                 } else {
                     self.remove_char(code == KeyCode::Delete);
                 }
@@ -1169,7 +1180,9 @@ impl Screen {
             } => {
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
-                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config);
+                    let msg = self.editor.get_buf().create_remove_msg_region(from, to, &config);
+
+                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, msg, &config);
                 }
 
                 self.insert_char('\t');
@@ -1183,7 +1196,9 @@ impl Screen {
             } => {
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
-                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, &config)
+                    let msg = self.editor.get_buf().create_remove_msg_region(from, to, &config);
+
+                    Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, msg, &config)
                 }
                 
                 self.insert_char(ch);
@@ -1206,16 +1221,22 @@ impl Screen {
     }
 
     pub fn undo(&mut self) {
-        let syntax = self.editor.get_buf().syntax();
-
-        if let Some(diff) = self.editor.get_buf_mut().history().current() {
-            let rows = diff.rows().into_iter().map(|c| Row::from_chars(c.to_owned(), &self.config, syntax)).collect();
-            Pos(self.cx, self.cy) = self.editor.get_buf_mut().insert_rows(pos!(self), rows, &self.config);
-        }
+        Pos(self.cx, self.cy) = match self.editor.get_buf_mut().undo(&self.config) {
+            Some(cpos) => cpos,
+            None => return
+        };
     }
 
     pub fn redo(&mut self) {
+        Pos(self.cx, self.cy) = match self.editor.get_buf_mut().redo(&self.config) {
+            Some(cpos) => cpos,
+            None => return
+        }
+    }
 
+    pub fn test_history(&mut self) {
+        println!("\n---\n{:#?}\n---", self.editor.get_buf().history());
+        panic!();
     }
 
     pub fn copy(&mut self) {
@@ -1506,7 +1527,8 @@ impl Screen {
             }
         }
 
-        Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, to, config);
+        let msg = self.editor.get_buf().create_remove_msg_region(from, to, config);
+        Pos(self.cx, self.cy) = self.editor.get_buf_mut().remove_rows(from, msg, config);
     }
 
     /// Gets the row according to `self`'s `cy` attribute.
@@ -1539,6 +1561,6 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        self.clean_up();
+        // self.clean_up();
     }
 }

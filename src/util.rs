@@ -88,7 +88,7 @@ impl Add<Pos> for Pos {
 /// ```
 /// Example 2:
 /// ```rust
-/// pos!(self) // Same as Pos(self.cx + self.col_offset, self.cy + self.row_offset)
+/// pos!(self) // Same as Pos(self.cx, self.cy)
 /// ```
 #[macro_export]
 macro_rules! pos {

@@ -1,4 +1,4 @@
-use crate::{buffer::Row, util::Pos};
+use crate::util::Pos;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Diff {
@@ -14,10 +14,17 @@ impl Diff {
         }
     }
 
+    pub fn pos(&self) -> &Pos {
+        match self {
+            Self::Insert(p, _) => p,
+            Self::Remove(p, _) => p
+        }
+    }
+
     pub fn rows(&self) -> &[String] {
         match self {
-            Self::Insert(_, rows) => &rows,
-            Self::Remove(_, rows) => &rows
+            Self::Insert(_, rows) => rows,
+            Self::Remove(_, rows) => rows
         }
     }
 }

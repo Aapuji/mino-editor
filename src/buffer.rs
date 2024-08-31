@@ -29,7 +29,7 @@ pub struct TextBuffer {
 }
 
 impl TextBuffer {
-    /// Create a new, empty `TextBuffer`.
+    /// Create a new, empty [`TextBuffer`].
     pub fn new() -> Self {
         Self {
             rows: vec![],
@@ -43,7 +43,7 @@ impl TextBuffer {
         }
     }
 
-    /// Opens the contents of a file and turns it into the `TextBuffer`'s contents.
+    /// Opens the contents of a file and turns it into the [`TextBuffer`]'s contents.
     pub fn open(&mut self, path: &str, config: &Config) -> error::Result<()> {
         self.file_name = path.to_owned();
         if let Some(ext) = self.get_file_ext() {
@@ -65,7 +65,7 @@ impl TextBuffer {
         Ok(())
     }
 
-    /// Renames the file of the current `TextBuffer`.
+    /// Renames the file of the current [`TextBuffer`].
     pub fn rename(&mut self, path: &str) -> error::Result<()> {
         let prev_ext = self.get_file_ext().map(str::to_owned);
         fs::rename(&self.file_name, path).map_err(Error::from)?;
@@ -97,12 +97,12 @@ impl TextBuffer {
         }
     }
 
-    /// Appends a new row to the end of the `TextBuffer`, given the characters that compose it.
+    /// Appends a new row to the end of the [`TextBuffer`], given the characters that compose it.
     pub fn append(&mut self, chars: String, config: &Config) {        
         self.push(Row::from_chars(chars, config, self.syntax))
     }
 
-    /// Appends a new row to the end of the `TextBuffer`.
+    /// Appends a new row to the end of the [`TextBuffer`].
     pub fn append_row(&mut self, row: Row) {
         self.push(row);
     }
@@ -122,17 +122,25 @@ impl TextBuffer {
         s
     }
 
+    /// Does the same as [`TextBuffer::insert_rows_no_diff`], but also records the action in the [`TextBuffer`]'s history.
+    pub fn insert_rows(&mut self, pos: Pos, rows: Vec<Row>, config: &Config) -> Pos {        
+        self.history.perform(
+            Diff::Insert(pos, rows.iter()
+                .map(|r| r.chars().to_owned())
+                .collect::<Vec<_>>()
+            )
+        );
+
+        self.insert_rows_no_diff(pos, rows, config)
+    }
+
     /// Inserts the given `rows` at the given `pos`. The first row will be appended to the row `pos` is at, and the last row will be prepended to the row after the given `pos`.
     /// 
     /// Returns position of end of newly inserted rows.
     /// 
     /// Assumes the given `pos` is a valid position in the text buffer. 
-    pub fn insert_rows(&mut self, pos: Pos, rows: Vec<Row>, config: &Config) -> Pos {        
-        let diff = Diff::Insert(pos, rows.iter()
-            .map(|r| r.chars().to_owned())
-            .collect::<Vec<_>>());
-       
-        if self.rows.is_empty() {
+    pub fn insert_rows_no_diff(&mut self, pos: Pos, rows: Vec<Row>, config: &Config) -> Pos {
+        if rows.is_empty() {
             return pos;
         }
 
@@ -174,9 +182,19 @@ impl TextBuffer {
 
         self.make_dirty();
 
-        self.history.perform(diff);
-
         res_pos
+    }
+
+    /// Does the same as [`TextBuffer::remove_rows_no_diff`], but also records the action in the [`TextBuffer`]'s history.
+    pub fn remove_rows(&mut self, from: Pos, rows: Vec<String>, config: &Config) -> Pos {        
+        self.history.perform(
+            Diff::Remove(from, rows.iter()
+                .map(|r| r.to_owned())
+                .collect::<Vec<_>>()
+            )
+        );
+
+        self.remove_rows_no_diff(from, &rows, config)
     }
 
     /// Removes the text & rows between the `from` and `to` positions.
@@ -184,8 +202,13 @@ impl TextBuffer {
     /// Returns the position of the collapse point (end of removed rows).
     /// 
     /// Assumes positions are valid, and that `from < to`.
-    pub fn remove_rows(&mut self, from: Pos, to: Pos, config: &Config) -> Pos {        
-        self.history.perform(self.create_remove_region_diff(from, to, config));
+    pub fn remove_rows_no_diff(&mut self, from: Pos, rows: &Vec<String>, config: &Config) -> Pos {
+        let to = match (rows.len(), rows.last()) {
+            (0, _) => from,
+            (1, Some(row)) => from + Pos(row.len(), 0),
+            (n, Some(last)) => Pos(last.len(), from.y() + n - 1),
+            _ => unreachable!()
+        };
         
         if from == to {
             return from;
@@ -202,13 +225,15 @@ impl TextBuffer {
             self.rows[from.y()].chars.replace_range(from_cx.., "");
 
             self.rows.drain(from.y()+1..to.y());
+            
+            if from.y() + 1 < self.num_rows() { 
+                self.rows[from.y() + 1].chars.replace_range(..to_cx, "");
+                let chars = self.rows[from.y() + 1].chars.clone();
+                self.rows.remove(from.y() + 1);
 
-            self.rows[from.y() + 1].chars.replace_range(..to_cx, "");
-            let chars = self.rows[from.y() + 1].chars.clone();
-            self.rows.remove(from.y() + 1);
-
-            let row = &mut self.rows[from.y()];
-            row.chars.push_str(&chars);
+                let row = &mut self.rows[from.y()];
+                row.chars.push_str(&chars);
+            }
         }
 
         let syntax = self.syntax;
@@ -219,21 +244,52 @@ impl TextBuffer {
         from
     }
 
-    pub fn create_remove_region_diff(&self, from: Pos, to: Pos, config: &Config) -> Diff {
+    /// Creates the removal message for a given positional region.
+    pub fn create_remove_msg_region(&self, from: Pos, to: Pos, config: &Config) -> Vec<String> {
         let from_cx = self.row_at(from.y()).rx_to_cx(from.x(), config);
         let to_cx = self.row_at(to.y()).rx_to_cx(to.x(), config);
         
         let mut rows = Vec::with_capacity(to.y()-from.y()+1);
 
-        rows.push(self.row_at(from.y()).chars_at(from_cx..).to_owned());
+        if from.y() == to.y() {
+            rows.push(self.row_at(from.y()).chars_at(from_cx..to_cx).to_owned());
+        } else {
+            rows.push(self.row_at(from.y()).chars_at(from_cx..).to_owned());
 
-        for y in from.y()+1..to.y() {
-            rows.push(self.row_at(y).chars.to_owned());
+            if to.y() - from.y() >= 1 {
+                for y in from.y()+1..to.y() {
+                    rows.push(self.row_at(y).chars.to_owned());
+                }
+
+                rows.push(self.row_at(to.y()).chars_at(..to_cx).to_owned());
+            }
         }
 
-        rows.push(self.row_at(to.y()).chars_at(..to_cx).to_owned());
+        rows
+    }
 
-        Diff::Remove(from, rows)
+    pub fn undo(&mut self, config: &Config) -> Option<Pos> {
+        let pos = match self.history.current() {
+            Some(Diff::Insert(p, rows)) => self.remove_rows_no_diff(*p, &rows.clone(), config),
+            Some(Diff::Remove(p, rows)) => self.insert_rows_no_diff(*p, rows.iter().map(|chars| Row::from_chars(chars.to_owned(), config, self.syntax)).collect(), &config),
+            None => return None
+        };
+
+        self.history.undo()?;
+
+        Some(pos)
+    }
+
+    pub fn redo(&mut self, config: &Config) -> Option<Pos> {
+        self.history.redo()?;
+
+        let pos = match self.history.current() {
+            Some(Diff::Remove(p, rows)) => self.remove_rows_no_diff(*p, &rows.clone(), config),
+            Some(Diff::Insert(p, rows)) => self.insert_rows_no_diff(*p, rows.iter().map(|chars| Row::from_chars(chars.to_owned(), config, self.syntax)).collect(), &config),
+            None => return None
+        };
+
+        Some(pos)
     }
 
     pub fn rows(&self) -> &Vec<Row> {
@@ -246,6 +302,10 @@ impl TextBuffer {
 
     pub fn num_rows(&self) -> usize {
         self.rows.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.num_rows() == 0
     }
 
     pub fn file_name(&self) -> &str {
@@ -336,7 +396,7 @@ impl TextBuffer {
     }
 }
 
-/// Struct for holding information about a row in a `TextBuffer`.
+/// Struct for holding information about a row in a [`TextBuffer`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Row {
     chars: String,
@@ -347,7 +407,7 @@ pub struct Row {
 }
 
 impl Row {
-    /// Create a new, empty `Row`.
+    /// Create a new, empty [`Row`].
     pub fn new() -> Self {
         Self {
             chars: String::new(),
@@ -358,7 +418,7 @@ impl Row {
         }
     }
 
-    /// Creates a new `Row`, given its contents, and a `Config` struct to determine details.
+    /// Creates a new [`Row`], given its contents, and a [`Config`] struct to determine details.
     pub fn from_chars(chars: String, config: &Config, syntax: &'static Syntax) -> Self {
         let mut row = Row::new();
         row.chars = chars;
@@ -451,7 +511,7 @@ impl Row {
         start_idx..end_idx
     }
 
-    /// Updates the `render` and `rsize` properties to align with the `chars` property.
+    /// Updates the [`render`] and [`rsize`] properties to align with the [`chars`] property.
     pub fn update(&mut self, config: &Config, syntax: &'static Syntax) {
         let mut render = String::with_capacity(self.size());
 
@@ -787,7 +847,7 @@ impl Row {
         }
     }
 
-    /// Splits the current row and returns the next row created.
+    /// Splits the current [`Row`] and returns the next [`Row`] created.
     pub fn split_row(&mut self, idx: usize, config: &Config, syntax: &'static Syntax) -> Row {
         if idx >= self.size() {
             return Row::new();

@@ -1,9 +1,10 @@
 use circular_buffer::CircularBuffer;
 
-use crate::{buffer::TextBuffer, diff::Diff};
+use crate::diff::Diff;
 
 const DEPTH: usize = 50;
 
+/// A struct that holds the edit history of a [`TextBuffer`].
 #[derive(Debug)]
 pub struct History {
     redo: Box<CircularBuffer<DEPTH, Diff>>,
@@ -23,20 +24,24 @@ impl History {
         self.undo.clear();
     }
 
-    pub fn redo(&mut self) {
+    pub fn redo(&mut self) -> Option<()> {
         if self.undo.is_empty() {
-            return;
+            return None;
         }
 
-        self.redo.push_back(self.undo.pop().unwrap());
+        self.redo.push_back(self.undo.pop().unwrap().inverse());
+
+        Some(())
     }
 
-    pub fn undo(&mut self) {
+    pub fn undo(&mut self) -> Option<()> {
         if self.redo.is_empty() {
-            return;
+            return None;
         }
 
-        self.undo.push(self.redo.pop_back().unwrap());
+        self.undo.push(self.redo.pop_back().unwrap().inverse());
+
+        Some(())
     }
 
     pub fn current(&self) -> Option<&Diff> {
