@@ -23,6 +23,7 @@ impl Themes {
                     fg: fg,
                     dimmed: Rgb(138, 138, 138),
                     current_line: Rgb(208, 208, 208),
+                    title: Style::new(fg, bg, FontStyle::default()),
                     cursor: CursorStyle::Regular,
                     normal: Style::new(fg, bg, FontStyle::default()),
                     number: Style::new(Rgb(181, 206, 168), bg, FontStyle::default()),
@@ -48,6 +49,7 @@ impl Themes {
                     fg: fg,
                     dimmed: Rgb(138, 138, 138),
                     current_line: Rgb(208, 208, 208),
+                    title: Style::new(fg, bg, FontStyle::default()),
                     cursor: CursorStyle::Regular,
                     normal: Style::new(fg, bg, FontStyle::default()),
                     number: Style::new(Rgb(181, 206, 168), bg, FontStyle::default()),
@@ -70,10 +72,11 @@ impl Themes {
                 let normal = Style::new(fg, bg, FontStyle::default());
 
                 Theme {
-                    bg: bg,
-                    fg: fg,
+                    bg,
+                    fg,
                     dimmed: Rgb(86, 86, 86),
                     current_line: Rgb(224, 227, 96),
+                    title: Style::new(fg, bg, FontStyle::default()),
                     cursor: CursorStyle::Regular, // if I can find a way to change cursor color, then use BigBar
                     normal: normal,
                     number: normal,
@@ -90,6 +93,33 @@ impl Themes {
                     select: Rgb(116, 118, 34)
                 }
             }
+            Self::GithubLight   => {
+                let bg = Rgb(255, 255, 255);
+                let fg = Rgb(31, 35, 40);
+                let normal = Style::new(fg, bg, FontStyle::default());
+
+                Theme {
+                    bg,
+                    fg,
+                    dimmed: Rgb(99, 109, 120),
+                    current_line: Rgb(16, 16, 16),
+                    title: Style::new(fg, bg, FontStyle::default()),
+                    cursor: CursorStyle::Regular,
+                    normal,
+                    number: Style::new(Rgb(5, 80, 174), bg, FontStyle::default()),
+                    string: Style::new(Rgb(10, 48, 105), bg, FontStyle::default()),
+                    comment: Style::new(Rgb(90, 108, 119), bg, FontStyle::default()),
+                    keyword: Style::new(Rgb(207, 34, 46), bg, FontStyle::default()),
+                    flowword: Style::new(Rgb(207, 34, 46), bg, FontStyle::default()),
+                    common_type: normal,
+                    metaword: Style::new(Rgb(207, 34, 46), bg, FontStyle::default()),
+                    ident: normal,
+                    function: Style::new(Rgb(102, 57, 186), bg, FontStyle::default()),
+                    path: normal,
+                    search: Rgb(255, 150, 50),
+                    select: Rgb(206, 225, 248)
+                }
+            }
             _ => todo!()
         }.to_owned()
     }
@@ -97,16 +127,17 @@ impl Themes {
 
 impl Default for Themes {
     fn default() -> Self {
-        Themes::Campbell
+        Themes::GithubLight
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Theme {
-    bg: Rgb,            // Default text color
-    fg: Rgb,            // Default bg color
+    bg: Rgb,            // Default bg color
+    fg: Rgb,            // Default text color
     dimmed: Rgb,        // Dimmed text color (ie. for line # and ~)
     current_line: Rgb,  // Current line number text color
+    title: Style,       // Style for the welcome screen title
     cursor: CursorStyle,// Default cursor style (cursor for main text buffer)
     normal: Style,
     number: Style,
@@ -138,6 +169,10 @@ impl Theme {
 
     pub fn current_line(&self) -> &Rgb {
         &self.current_line
+    }
+
+    pub fn title(&self) -> &Style {
+        &self.title
     }
 
     pub fn cursor(&self) -> &CursorStyle {

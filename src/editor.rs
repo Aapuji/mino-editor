@@ -44,7 +44,6 @@ impl Editor {
             for path in paths {
                 let mut buf = TextBuffer::new();
                 buf.open(&path, config)?;
-
                 editor.append_buf(buf);
             }
         }

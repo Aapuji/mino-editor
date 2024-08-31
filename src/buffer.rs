@@ -847,39 +847,6 @@ impl Row {
         }
     }
 
-    /// Splits the current [`Row`] and returns the next [`Row`] created.
-    pub fn split_row(&mut self, idx: usize, config: &Config, syntax: &'static Syntax) -> Row {
-        if idx >= self.size() {
-            return Row::new();
-        }
-
-        if idx == 0 {
-            let row = self.clone();
-            *self = Row::new();
-
-            return row;
-        }
-
-        let s = self.chars[idx..].to_owned();
-        let len = s.len();
-
-        let mut next_row = Row {
-            chars: s,
-            render: String::new(),
-            hl: vec![],
-			has_tabs: false,
-            is_dirty: true
-        };
-    
-        next_row.update(config, syntax);
-    
-        self.chars = self.chars_at(..idx).to_owned();
-    
-        self.update(config, syntax);
-    
-        next_row
-    }
-
     pub fn cx_to_rx(&self, cx: usize, config: &Config) -> usize {
         let mut rx = 0;
 

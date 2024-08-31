@@ -1,4 +1,4 @@
-use crate::{style::{Rgb, Style}, theme::Theme};
+use crate::{style::{Style}, theme::Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Highlight {

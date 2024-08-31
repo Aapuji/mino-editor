@@ -6,6 +6,7 @@ use crate::bitexpr;
 pub enum Language {
     Text,
     C,
+    Cpp,
     Rust,
     Python,
     Unknown
@@ -16,6 +17,7 @@ impl Language {
         match self {
             Self::Text      => "Text",
             Self::C         => "C",
+            Self::Cpp       => "Cpp",
             Self::Rust      => "Rust",
             Self::Python    => "Python",
             Self::Unknown   => "?"
@@ -26,6 +28,7 @@ impl Language {
         match self {
             Self::Text      => &["txt"],
             Self::C         => &["c", "h"],
+            Self::Cpp       => &["cc", "cpp", "c++", "hh", "hpp", "h++"],
             Self::Rust      => &["rs"],
             Self::Python    => &["py"],
             Self::Unknown   => &[]
@@ -65,7 +68,7 @@ bitflags! {
 }
 
 impl Syntax {
-    pub const SYNTAX_SET: [&'static Syntax; 4] = [Self::TEXT, Self::C, Self::RUST, Self::PYTHON];
+    pub const SYNTAX_SET: [&'static Syntax; 5] = [Self::TEXT, Self::C, Self::CPP, Self::RUST, Self::PYTHON];
 
     pub const TEXT: &'static Syntax = &Syntax {
         lang: &Language::Text,
@@ -81,7 +84,7 @@ impl Syntax {
     
     pub const C: &'static Self = &Self {
         lang: &Language::C,
-        keywords: &["struct", "union", "typedef", "const", "static", "enum"],
+        keywords: &["struct", "union", "typedef", "const", "static", "enum", "restrict", "__LINE__", "__FILE__", "__DATE__", "__TIME__", "__STDC__", "__STDC_HOSTED__", "__STDC_VERSION__"],
         flow_keywords: &["switch", "if", "while", "for", "break", "continue", "return", "else", "case"],
         common_types: &["int", "long", "double", "float", "char", "unsigned", "signed", "void", "size_t"],
         meta_keywords: &["#define", "#include", "#undef", "#ifdef", "#ifndef", "#if", "#elif", "#else", "#endif", "#line", "#error", "#warning", "region", "endregion", "#pragma"],
@@ -91,6 +94,23 @@ impl Syntax {
         flags: bitexpr! {
             SyntaxFlags :
             HIGHLIGHT_NUMBERS | 
+            HIGHLIGHT_STRINGS |
+            HIGHLIGHT_IDENTS
+        }
+    };
+
+    pub const CPP: &'static Self = &Self {
+        lang: &Language::Cpp,
+        keywords: &["alignas", "alignof", "asm", "__asm", "__asm__", "class", "concept", "consteval", "constexpr", "constinit", "const_case", "decltype", "dynamic_cast", "enum", "explicit", "export", "extern", "false", "float", "friend", "inline", "mutable", "namespace", "noexcept", "nullptr", "private", "protected", "public", "register", "reinterpret_cast", "requires", "sizeof", "static", "static_assert", "static_cast", "struct", "template", "this", "thread_local", "typedef", "typeid", "typename", "union", "virtual", "volatile", "true", "__LINE__", "__FILE__", "__DATE__", "__TIME__", "__STDC__", "__STDC_HOSTED__", "__STDC_VERSION__", "__STDC_MB_MIGHT_NEW_WC__", "__STDC_ISO_10646__", "__STDCPP_STRICT_POINTER_SAFETY__", "__STD_CPP_THREADS__", "__cplusplus"],
+        flow_keywords: &["break", "case", "catch", "continue", "co_await", "co_return", "co_yield", "default", "delete", "do", "esle", "for", "goto", "if", "new", "return", "switch", "throw", "try", "using", "while"],
+        common_types: &["int", "float", "char", "double", "void", "bool", "auto", "long", "signed", "unsigned", "size_t", "short", "wchar_t", "char8_t", "char16_t", "char32_t"],
+        meta_keywords: &["#define", "#include", "#undef", "#ifdef", "#ifndef", "#if", "#elif", "#else", "#endif", "#line", "#error", "#warning", "region", "endregion", "#pragma"],
+        path_access_delims: &["::"],
+        ln_comment: Some("//"),
+        multi_comment: Some(("/*", "*/")),
+        flags: bitexpr! {
+            SyntaxFlags :
+            HIGHLIGHT_NUMBERS |
             HIGHLIGHT_STRINGS |
             HIGHLIGHT_IDENTS
         }

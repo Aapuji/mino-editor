@@ -501,7 +501,7 @@ impl Screen {
                     }
 
                     welcome.truncate(welcome_len);
-                    format!("{welcome}\r\n")
+                    format!("{}{welcome}{}\r\n", self.config.theme().title(), Style::RESET)
                 } else if num_rows == 0 && y == self.screen_rows / 3 + 2 && self.screen_rows >= 16 {
                     // Display New help
                     px += 1;
@@ -634,11 +634,11 @@ impl Screen {
                 self.queue(Print(str))?;
             } else {
                 // self.queue(Show)?;
-                self.queue(Print(format!("{}{:width$}\x1b[39m ", if file_row == self.cy {
+                self.queue(Print(format!("{}{:width$}\x1b[38;2;{}m ", if file_row == self.cy {
                     format!("\x1b[38;2;{}m", self.config.theme().current_line())
                 } else {
                     format!("\x1b[38;2;{}m", self.config.theme().dimmed())
-                }, 1 + file_row, width=self.col_start - 1)))?;
+                }, 1 + file_row, self.config.theme().fg(), width=self.col_start - 1)))?;
 
                 let buf = self.editor.get_buf();
                 let row_size = buf.rows()[file_row].rsize();

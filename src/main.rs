@@ -15,8 +15,10 @@ mod style;
 mod theme;
 mod util;
 
+use core::time;
 use std::env;
 use std::process;
+use std::thread;
 use crossterm::terminal::enable_raw_mode;
 use clap::Parser;
 
@@ -41,17 +43,19 @@ fn main() {
     let cli = Cli::parse();
 
     let _cleanup = setup();
-
-    let screen = Screen::open(util::prepend_prefix(cli.files(), cli.prefix()));
-
-    if let Err(_) = screen {
+    let exit = |msg: &'static str| -> ! {
         drop(_cleanup);
-        eprintln!("An error occurred");
-        
+        eprintln!("{msg}");
+        thread::sleep(time::Duration::from_secs(3));
         process::exit(1);
-    }
+    };
 
-    let screen = screen.unwrap();
+    let screen = match Screen::open(util::prepend_prefix(cli.files(), cli.prefix())) {
+        Ok(screen) => screen,
+        _ => {
+            exit("An error occurred.")
+        }
+    };
 
     screen.run();
 }
