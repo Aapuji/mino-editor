@@ -1028,15 +1028,6 @@ impl Screen {
                 self.redo();
             }
 
-            // DEBUGGING ONLY: Test History CTRL+SHIFT+Z
-            KeyEvent {
-                code: KeyCode::Char('Y'),
-                modifiers: KeyModifiers::SHIFT,
-                ..
-            } => {
-                self.test_history();
-            }
-
             // Move (arrows)
             KeyEvent {
                 code: KeyCode::Up       |
@@ -1232,11 +1223,6 @@ impl Screen {
             Some(cpos) => cpos,
             None => return
         }
-    }
-
-    pub fn test_history(&mut self) {
-        println!("\n---\n{:#?}\n---", self.editor.get_buf().history());
-        panic!();
     }
 
     pub fn copy(&mut self) {
@@ -1561,6 +1547,6 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        // self.clean_up();
+        self.clean_up();
     }
 }
