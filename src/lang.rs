@@ -9,6 +9,8 @@ pub enum Language {
     Cpp,
     Rust,
     Python,
+    Js,
+    Ts,
     Unknown
 }
 
@@ -20,6 +22,8 @@ impl Language {
             Self::Cpp       => "Cpp",
             Self::Rust      => "Rust",
             Self::Python    => "Python",
+            Self::Js        => "Js",
+            Self::Ts        => "Ts",
             Self::Unknown   => "?"
         }
     }
@@ -31,6 +35,8 @@ impl Language {
             Self::Cpp       => &["cc", "cpp", "c++", "hh", "hpp", "h++"],
             Self::Rust      => &["rs"],
             Self::Python    => &["py"],
+            Self::Js        => &["js", "jsx"],
+            Self::Ts        => &["ts", "d.ts", "tsx"],
             Self::Unknown   => &[]
         }
     }
@@ -68,7 +74,7 @@ bitflags! {
 }
 
 impl Syntax {
-    pub const SYNTAX_SET: [&'static Syntax; 5] = [Self::TEXT, Self::C, Self::CPP, Self::RUST, Self::PYTHON];
+    pub const SYNTAX_SET: [&'static Syntax; 7] = [Self::TEXT, Self::C, Self::CPP, Self::RUST, Self::PYTHON, Self::JS, Self::Ts];
 
     pub const TEXT: &'static Syntax = &Syntax {
         lang: &Language::Text,
@@ -144,7 +150,50 @@ impl Syntax {
         path_access_delims: &[],
         ln_comment: Some("#"),
         multi_comment: None,
-        flags: bitexpr!(SyntaxFlags: HIGHLIGHT_NUMBERS | HIGHLIGHT_STRINGS | HIGHLIGHT_IDENTS)
+        flags: bitexpr! {
+            SyntaxFlags :
+            HIGHLIGHT_NUMBERS |
+            HIGHLIGHT_STRINGS |
+            HIGHLIGHT_IDENTS
+        }
+    };
+
+    pub const JS: &'static Self = &Self {
+        lang: &Language::Js,
+        keywords: &["class", "const", "debugger", "delete", "export", "extends", "function", "in", "instanceof", "null", "undefined", "super", "this", "true", "false", "typeof", "var", "void", "let", "static", "async"],
+        flow_keywords: &["break", "case", "catch", "continue", "default", "do", "else", "finally", "for", "if", "import", "as", "new", "return", "switch", "throw", "try", "while", "with", "yield", "await"],
+        common_types: &[],
+        meta_keywords: &[],
+        path_access_delims: &[],
+        ln_comment: Some("//"),
+        multi_comment: Some(("/*", "*/")),
+        flags: bitexpr! {
+            SyntaxFlags :
+            HIGHLIGHT_NUMBERS |
+            HIGHLIGHT_STRINGS |
+            HIGHLIGHT_IDENTS  |
+            NESTED_COMMENTS   |
+            CAPITAL_AS_TYPES
+        }
+    };
+
+    pub const Ts: &'static Self = &Self {
+        lang: &Language::Ts,
+        keywords: &["class", "const", "debugger", "delete", "export", "extends", "function", "in", "instanceof", "null", "undefined", "super", "this", "true", "false", "typeof", "var", "void", "let", "static", "async", "enum", "implements", "interface", "package", "protected", "private", "public", "constructor", "declare", "get", "module", "require", "set", "type"],
+        flow_keywords: &["break", "case", "catch", "continue", "default", "do", "else", "finally", "for", "if", "import", "as", "new", "return", "switch", "throw", "try", "while", "with", "yield", "await", "of"],
+        common_types: &["any", "boolean", "number", "string", "symbol"],
+        meta_keywords: &[],
+        path_access_delims: &[],
+        ln_comment: Some("//"),
+        multi_comment: Some(("/*", "*/")),
+        flags: bitexpr! {
+            SyntaxFlags :
+            HIGHLIGHT_NUMBERS |
+            HIGHLIGHT_STRINGS |
+            HIGHLIGHT_IDENTS  |
+            NESTED_COMMENTS   |
+            CAPITAL_AS_TYPES
+        }
     };
 
     pub const UNKNOWN: &'static Self = &Self {

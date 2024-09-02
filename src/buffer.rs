@@ -313,9 +313,13 @@ impl TextBuffer {
     }
 
     pub fn get_file_ext(&self) -> Option<&str> {
-        Path::new(&self.file_name)
+        if let Some('.') = self.file_name.chars().next() {
+            return Some(&self.file_name[1..]);
+        };
+        
+        std::path::Path::new(&self.file_name)
             .extension()
-            .and_then(OsStr::to_str)
+            .and_then(std::ffi::OsStr::to_str)
     }
 
     pub fn file_name_mut(&mut self) -> &mut String {

@@ -127,7 +127,7 @@ impl Themes {
 
 impl Default for Themes {
     fn default() -> Self {
-        Themes::GithubLight
+        Themes::Campbell
     }
 }
 
