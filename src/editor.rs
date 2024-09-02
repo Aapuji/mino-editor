@@ -21,9 +21,9 @@ pub struct Editor {
 }
 
 impl Editor {
-    pub fn new() -> Self {
+    pub fn new(is_readonly: bool) -> Self {
         Self {
-            bufs: vec![TextBuffer::new()],
+            bufs: vec![TextBuffer::new(is_readonly)],
             current_buf: 0,
             quit_times: 0,
             close_times: 0,
@@ -34,7 +34,7 @@ impl Editor {
     }
 
     pub fn open_from(paths: &Vec<String>, config: &Config) -> error::Result<Self> {
-        let mut editor = Self::new();
+        let mut editor = Self::new(config.readonly());
         
         if paths.len() == 1 {
             editor.get_buf_mut().open(&paths[0], config)?;
@@ -42,7 +42,7 @@ impl Editor {
             editor.remove_buf(0);
 
             for path in paths {
-                let mut buf = TextBuffer::new();
+                let mut buf = TextBuffer::new(config.readonly());
                 buf.open(&path, config)?;
                 editor.append_buf(buf);
             }

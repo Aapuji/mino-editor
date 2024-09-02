@@ -18,7 +18,7 @@ use crate::config::{Config, CursorStyle};
 use crate::highlight::SelectHighlight;
 use crate::lang::Syntax;
 use crate::cleanup::CleanUp;
-use crate::buffer::{Row, TextBuffer};
+use crate::buffer::{Mode, Row, TextBuffer};
 use crate::editor::{Editor, LastMatch};
 use crate::error::{self, Error};
 use crate::status::Status;
@@ -45,15 +45,15 @@ pub struct Screen {
 impl Screen {
     const ERASE_TERM: &'static str = "\x1bc";
 
-    pub fn new() -> Self {
+    pub fn new(config: Config) -> Self {
         let (cs, rs) = terminal::size().expect("An error occurred");
 
         Self {
             stdout: io::stdout(),
             screen_rows: rs as usize - 2, // Make room for status bar and status msg area
             screen_cols: cs as usize,
-            editor: Editor::new(),
-            config: Rc::new(Config::default()),
+            editor: Editor::new(config.readonly()),
+            config: Rc::new(config),
             row_offset: 0,
             col_offset: 0,
             col_start: 2,   // Make room for line numbers
@@ -66,8 +66,8 @@ impl Screen {
         }
     }
 
-    pub fn open(file_names: Vec<String>) -> error::Result<Self> {
-        let mut screen = Self::new();
+    pub fn open(config: Config, file_names: Vec<String>) -> error::Result<Self> {
+        let mut screen = Self::new(config);
         
         if !file_names.is_empty() {
             screen.editor = Editor::open_from(&file_names, screen.config())?;
@@ -840,7 +840,7 @@ impl Screen {
                 modifiers: KeyModifiers::CONTROL, 
                 ..
             } => {
-                self.editor.append_buf(TextBuffer::new());
+                self.editor.append_buf(TextBuffer::new(config.readonly()));
                 self.editor.set_current_buf(self.editor.bufs().len() - 1);
 
                 self.cx = 0;
@@ -874,7 +874,7 @@ impl Screen {
                         self.editor.remove_buf(0);
                     }
 
-                    let mut buf = TextBuffer::new();
+                    let mut buf = TextBuffer::new(config.readonly());
                     buf.open(&text, &*self.config)?;
 
                     self.editor.append_buf(buf);
@@ -911,7 +911,7 @@ impl Screen {
                     self.editor.remove_current_buf();
 
                     if self.editor.num_bufs() == 0 {
-                        self.editor.append_buf(TextBuffer::new());
+                        self.editor.append_buf(TextBuffer::new(config.readonly()));
                         self.cx = 0;
                         self.cy = 0;
                     }
@@ -925,7 +925,12 @@ impl Screen {
                 code: KeyCode::Char('r'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } => {
+            } => 'edit_event: {
+                if let &Mode::View = self.editor.get_buf().mode() {
+                    self.report_readonly();
+                    break 'edit_event;
+                }
+
                 self.rename("Rename (ESC to cancel): ")?;
             }
 
@@ -952,7 +957,12 @@ impl Screen {
                 code: KeyCode::Char('S'),
                 modifiers: m ,
                 ..
-            } if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => {
+            } if m == KeyModifiers::CONTROL | KeyModifiers::SHIFT => 'edit_event: {
+                if let &Mode::View = self.editor.get_buf().mode() {
+                    self.report_readonly();
+                    break 'edit_event;
+                }
+                
                 self.rename("Save as (ESC to cancel): ")?;
                 self.save()?;
             }
@@ -998,7 +1008,12 @@ impl Screen {
                 code: KeyCode::Char('v'), 
                 modifiers: KeyModifiers::CONTROL, 
                 ..
-            } => {
+            } => 'edit_event: {
+                if let &Mode::View = self.editor.get_buf().mode() {
+                    self.report_readonly();
+                    break 'edit_event;
+                }
+
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
                     let msg = self.editor.get_buf().create_remove_msg_region(from, to, &config);
@@ -1015,7 +1030,12 @@ impl Screen {
                 code: KeyCode::Char('z'), 
                 modifiers: KeyModifiers::CONTROL, 
                 ..
-            } => {
+            } => 'edit_event: {
+                if let &Mode::View = self.editor.get_buf().mode() {
+                    self.report_readonly();
+                    break 'edit_event;
+                }
+
                 self.undo();
             }
 
@@ -1024,7 +1044,12 @@ impl Screen {
                 code: KeyCode::Char('y'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            } => {
+            } => 'edit_event: {
+                if let &Mode::View = self.editor.get_buf().mode() {
+                    self.report_readonly();
+                    break 'edit_event;
+                }
+
                 self.redo();
             }
 
@@ -1127,7 +1152,12 @@ impl Screen {
                 code: KeyCode::Enter, 
                 modifiers: KeyModifiers::NONE, 
                 .. 
-            } => {
+            } => 'edit_event: {
+                if let &Mode::View = self.editor.get_buf().mode() {
+                    self.report_readonly();
+                    break 'edit_event;
+                }
+
                 Pos(self.cx, self.cy) = self.editor.get_buf_mut().insert_rows(pos!(self), vec![Row::new(); 2], &config);
             }
 
@@ -1136,7 +1166,12 @@ impl Screen {
                 code: code @ (KeyCode::Backspace | KeyCode::Delete), 
                 modifiers: KeyModifiers::NONE, 
                 ..
-            } => {
+            } => 'edit_event: {
+                if let &Mode::View = self.editor.get_buf().mode() {
+                    self.report_readonly();
+                    break 'edit_event;
+                }
+
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
                     let msg = self.editor.get_buf().create_remove_msg_region(from, to, &config);
@@ -1168,7 +1203,12 @@ impl Screen {
                 code: KeyCode::Tab,
                 modifiers: KeyModifiers::NONE,
                 ..
-            } => {
+            } => 'edit_event: {
+                if let &Mode::View = self.editor.get_buf().mode() {
+                    self.report_readonly();
+                    break 'edit_event;
+                }
+
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
                     let msg = self.editor.get_buf().create_remove_msg_region(from, to, &config);
@@ -1184,7 +1224,12 @@ impl Screen {
                 code: KeyCode::Char(ch),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT, 
                 .. 
-            } => {
+            } => 'edit_event: {
+                if let &Mode::View = self.editor.get_buf().mode() {
+                    self.report_readonly();
+                    break 'edit_event;
+                }
+
                 if self.editor.get_buf().is_in_select_mode() {
                     let (from, to) = self.get_select_region();
                     let msg = self.editor.get_buf().create_remove_msg_region(from, to, &config);
@@ -1209,6 +1254,11 @@ impl Screen {
         self.editor.set_close_times(config.close_times());
 
         Ok(self)
+    }
+
+    /// Reports to the user that they cannot edit in readonly mode.
+    pub fn report_readonly(&mut self) {
+        self.set_status_msg(String::from("Cannot edit in readonly mode."));
     }
 
     pub fn undo(&mut self) {

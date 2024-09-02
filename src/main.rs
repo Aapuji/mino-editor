@@ -19,6 +19,7 @@ use core::time;
 use std::env;
 use std::process;
 use std::thread;
+use config::Config;
 use crossterm::terminal::enable_raw_mode;
 use clap::Parser;
 
@@ -50,7 +51,9 @@ fn main() {
         process::exit(1);
     };
 
-    let screen = match Screen::open(util::prepend_prefix(cli.files(), cli.prefix())) {
+    let config = Config::new(cli.readonly());
+    let file_names = util::prepend_prefix(cli.files(), cli.prefix());
+    let screen = match Screen::open(config, file_names) {
         Ok(screen) => screen,
         _ => {
             exit("An error occurred.")

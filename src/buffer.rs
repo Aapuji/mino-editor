@@ -1,7 +1,5 @@
-use std::ffi::OsStr;
 use std::fs;
 use std::ops;
-use std::path::Path;
 
 use crate::checkflags;
 use crate::config::Config;
@@ -23,21 +21,23 @@ pub struct TextBuffer {
     is_dirty: bool,
     saved_cursor_pos: Pos,
     select_anchor: Option<Pos>,
-    in_select_mode: bool,
+    mode: Mode,
+    saved_mode: Mode,
     syntax: &'static Syntax,
     history: History
 }
 
 impl TextBuffer {
     /// Create a new, empty [`TextBuffer`].
-    pub fn new() -> Self {
+    pub fn new(is_readonly: bool) -> Self {
         Self {
             rows: vec![],
             file_name: String::new(),
             is_dirty: false,
             saved_cursor_pos: Pos(0, 0),
             select_anchor: None,
-            in_select_mode: false,
+            mode: if is_readonly { Mode::View } else { Mode::Insert },
+            saved_mode: if is_readonly { Mode::View } else { Mode::Insert },
             syntax: Syntax::UNKNOWN,
             history: History::new()
         }
@@ -144,6 +144,10 @@ impl TextBuffer {
             return pos;
         }
 
+        if let Mode::View = self.saved_mode {
+            return pos;
+        }
+
         if self.rows.is_empty() {
             self.append_row(Row::new());
         }
@@ -214,6 +218,10 @@ impl TextBuffer {
             return from;
         }
 
+        if let Mode::View = self.saved_mode {
+            return from;
+        }
+
         let from_cx = self.row_at(from.y()).rx_to_cx(from.x(), config);
         let to_cx = self.row_at(to.y()).rx_to_cx(to.x(), config);
 
@@ -240,6 +248,7 @@ impl TextBuffer {
         self.rows[from.y()].update(config, syntax);
 
         self.make_dirty();
+        self.mode = self.saved_mode;
 
         from
     }
@@ -366,16 +375,20 @@ impl TextBuffer {
         self.select_anchor = anchor;
     }
 
+    pub fn mode(&self) -> &Mode {
+        &self.mode
+    }
+
     pub fn is_in_select_mode(&self) -> bool {
-        self.in_select_mode
+        self.mode == Mode::Select
     }
 
     pub fn enter_select_mode(&mut self) {
-        self.in_select_mode = true;
+        self.mode = Mode::Select;
     }
 
     pub fn exit_select_mode(&mut self) {
-        self.in_select_mode = false;
+        self.mode = Mode::Insert;
         self.select_anchor = None;
     }
 
@@ -398,6 +411,14 @@ impl TextBuffer {
     pub fn current_diff(&self) -> Option<&Diff> {
         self.history.current()
     }
+}
+
+/// The mode that the [`TextBuffer`] is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Insert,
+    Select,
+    View,
 }
 
 /// Struct for holding information about a row in a [`TextBuffer`].

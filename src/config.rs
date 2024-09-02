@@ -8,6 +8,7 @@ use crate::theme::{Theme, Themes};
 /// Implements `Copy`.
 #[derive(Debug, Clone)]
 pub struct Config {
+    readonly: bool,
     tab_stop: usize,
     quit_times: u32,
     close_times: u32,
@@ -19,6 +20,17 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn new(readonly: bool) -> Config {
+        let mut config = Config::default();
+        config.readonly = readonly;
+
+        config
+    }
+
+    pub fn readonly(&self) -> bool {
+        self.readonly
+    }
+
     pub fn tab_stop(&self) -> usize {
         self.tab_stop
     }
@@ -55,6 +67,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            readonly: false,
             tab_stop: 4,
             quit_times: 1,
             close_times: 1,
