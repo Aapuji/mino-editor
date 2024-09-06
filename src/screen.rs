@@ -67,31 +67,6 @@ pub struct Screen {
 impl Screen {
     const ERASE_TERM: &'static str = "\x1bc";
 
-    pub fn keybinds_help_text(&self) -> String {
-        format!("\
-\x1b[1mKEYBINDS HELP\x1b[22m
-
-\x1b[4mKeybind\x1b[24m             \x1b[4mAction\x1b[24m
-CTRL + Q {dim}----------{undim} Quit Mino Editor
-CTRL + W {dim}----------{undim} Close Current Tab
-CTRL + N {dim}----------{undim} Create New File
-CTRL + O {dim}----------{undim} Open File
-CTRL + S {dim}----------{undim} Save File
-CTRL + SHIFT + S {dim}--{undim} Rename & Save File (Save As)
-CTRL + F {dim}----------{undim} Find Text
-CTRL + R {dim}----------{undim} Rename File
-CTRL + SHIFT + R {dim}--{undim} Reload Editor (\x1b[3min case of visual bug\x1b[23m)
-CTRL + A {dim}----------{undim} Select Entire File
-CTRL + C {dim}----------{undim} Copy Selection To Clipboard
-CTRL + V {dim}----------{undim} Paste From Clipboard
-CTRL + Z {dim}----------{undim} Undo
-CTRL + Y {dim}----------{undim} Redo
-CTRL + Tab {dim}--------{undim} Go To Next Tab
-CTRL + ? {dim}----------{undim} Open This Help Page
-CTRL + SHIFT + / {dim}--{undim} Open This Help Page", 
-        dim=format!("\x1b[38;2;{}m", self.config.theme().dimmed()), undim=self.config.theme().normal())
-    }
-
     pub fn new(config: Config) -> Self {
         let (cs, rs) = terminal::size().expect("An error occurred");
 
@@ -1301,6 +1276,31 @@ CTRL + SHIFT + / {dim}--{undim} Open This Help Page",
         self.editor.set_close_times(config.close_times());
 
         Ok(self)
+    }
+
+    pub fn keybinds_help_text(&self) -> String {
+        format!("\
+\x1b[1mKEYBINDS HELP\x1b[22m
+
+\x1b[4mKeybind\x1b[24m             \x1b[4mAction\x1b[24m
+CTRL + Q {dim}----------{undim} Quit Mino Editor
+CTRL + W {dim}----------{undim} Close Current Tab
+CTRL + N {dim}----------{undim} Create New File
+CTRL + O {dim}----------{undim} Open File
+CTRL + S {dim}----------{undim} Save File
+CTRL + SHIFT + S {dim}--{undim} Rename & Save File (Save As)
+CTRL + F {dim}----------{undim} Find Text
+CTRL + R {dim}----------{undim} Rename File
+CTRL + SHIFT + R {dim}--{undim} Reload Editor (\x1b[3min case of visual bug\x1b[23m)
+CTRL + A {dim}----------{undim} Select Entire File
+CTRL + C {dim}----------{undim} Copy Selection To Clipboard
+CTRL + V {dim}----------{undim} Paste From Clipboard
+CTRL + Z {dim}----------{undim} Undo
+CTRL + Y {dim}----------{undim} Redo
+CTRL + Tab {dim}--------{undim} Go To Next Tab
+CTRL + ? {dim}----------{undim} Open This Help Page
+CTRL + SHIFT + / {dim}--{undim} Open This Help Page", 
+        dim=format!("\x1b[38;2;{}m", self.config.theme().superdim()), undim=self.config.theme().normal())
     }
 
     pub fn open_keybind_buf(&mut self) -> error::Result<()> {

@@ -22,6 +22,7 @@ impl Themes {
                     bg: bg,
                     fg: fg,
                     dimmed: Rgb(138, 138, 138),
+                    superdim: Rgb(81, 81, 81),
                     current_line: Rgb(208, 208, 208),
                     title: Style::new(fg, bg, FontStyle::default()),
                     cursor: CursorStyle::Regular,
@@ -48,6 +49,7 @@ impl Themes {
                     bg: bg,
                     fg: fg,
                     dimmed: Rgb(138, 138, 138),
+                    superdim: Rgb(52, 52, 52),
                     current_line: Rgb(208, 208, 208),
                     title: Style::new(fg, bg, FontStyle::default()),
                     cursor: CursorStyle::Regular,
@@ -75,6 +77,7 @@ impl Themes {
                     bg,
                     fg,
                     dimmed: Rgb(86, 86, 86),
+                    superdim: Rgb(46, 48, 44),
                     current_line: Rgb(224, 227, 96),
                     title: Style::new(fg, bg, FontStyle::default()),
                     cursor: CursorStyle::Regular, // if I can find a way to change cursor color, then use BigBar
@@ -102,6 +105,7 @@ impl Themes {
                     bg,
                     fg,
                     dimmed: Rgb(99, 109, 120),
+                    superdim: Rgb(205, 205, 205),
                     current_line: Rgb(16, 16, 16),
                     title: Style::new(fg, bg, FontStyle::default()),
                     cursor: CursorStyle::Regular,
@@ -127,7 +131,7 @@ impl Themes {
 
 impl Default for Themes {
     fn default() -> Self {
-        Themes::GithubLight
+        Themes::Campbell
     }
 }
 
@@ -136,6 +140,7 @@ pub struct Theme {
     bg: Rgb,            // Default bg color
     fg: Rgb,            // Default text color
     dimmed: Rgb,        // Dimmed text color (ie. for line # and ~)
+    superdim: Rgb,      // Extremely dimmed text color (ie. for ---s in Keybinds Help)
     current_line: Rgb,  // Current line number text color
     title: Style,       // Style for the welcome screen title
     cursor: CursorStyle,// Default cursor style (cursor for main text buffer)
@@ -165,6 +170,10 @@ impl Theme {
 
     pub fn dimmed(&self) -> &Rgb {
         &self.dimmed
+    }
+
+    pub fn superdim(&self) -> &Rgb {
+        &self.superdim
     }
 
     pub fn current_line(&self) -> &Rgb {

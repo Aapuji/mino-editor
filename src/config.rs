@@ -71,7 +71,7 @@ impl Default for Config {
             tab_stop: 4,
             quit_times: 1,
             close_times: 1,
-            msg_bar_life: Duration::from_secs(5),
+            msg_bar_life: Duration::from_secs(1),
             prompt_bar_cursor_style: CursorStyle::Regular,
             hide_cursor_on_new_buf: true,
             color_support: if let Some(support) = supports_color::on(Stream::Stdout) {
