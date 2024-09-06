@@ -43,6 +43,15 @@ impl TextBuffer {
         }
     }
 
+    /// Creates a new [`TextBuffer`] given the text.
+    pub fn from_text(text: &str, is_readonly: bool) -> Self {
+        let mut buf = Self::new(is_readonly);
+
+        buf.rows = text.lines().map(|s| Row::from_chars(s.to_owned(), &Config::default(), &Syntax::UNKNOWN)).collect();
+
+        buf
+    }
+
     /// Opens the contents of a file and turns it into the [`TextBuffer`]'s contents.
     pub fn open(&mut self, path: &str, config: &Config) -> error::Result<()> {
         self.file_name = path.to_owned();
